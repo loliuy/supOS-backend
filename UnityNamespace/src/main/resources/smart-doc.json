@@ -1,0 +1,14 @@
+{
+  "allInOne": true,
+  "isStrict": false,
+  "outPath": "D://rest-doc",
+  "projectName": "eco",
+  "language":"CHINESE",
+  "appToken": "86b6fccc9ab64aecb5e28af856d0a782",
+  "openUrl": "http://100.100.100.20:7700/api",
+  "debugEnvName":"接口地址",
+  "debugEnvUrl":"http://office.unibutton.com:11488",
+  "replace": true,
+  "inlineEnum":true,
+  "contentType":"application/json"
+}

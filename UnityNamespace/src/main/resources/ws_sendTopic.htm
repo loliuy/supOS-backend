@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Uns-SendTopic</title>
+	<script>
+  const socket = new WebSocket('ws://localhost:8080/inter-api/supos/uns/ws');
+// 监听连接打开事件
+socket.addEventListener('open', function (event) {
+    // 发送 "hello" 字符串
+    socket.send('/send?t=hi&body={"say":"hello!"}');
+});
+            socket.onmessage = function(event) {
+                showMessage(event.data);
+                const d = event.data;
+                const code = d.code;
+                if(code == 206 && d['errTipFile'] != undefined ) {
+                  var et = document.getElementById('err')
+                  var filePath = encodeURIComponent(d.errTipFile)
+                  et.innerHTML = '<a href="/inter-api/supos/uns/excel/download?path=' +filePath+ '"/>Err</a>'
+                }
+            };
+            socket.onerror = function(error){
+                console.error('WebSocket encountered error: ', error);
+            };
+            socket.onclose = function(error){
+                console.log('WebSocket is closed now.');
+            };
+         function ckSend() {
+                
+                var topic = document.getElementById('topic').value;
+				var msg = document.getElementById('msg').value;
+				
+				console.log('ckSend: '+topic+', body='+msg);
+                sendTopic(topic, msg);
+        }
+
+        function sendTopic(topic, msg) {
+             socket.send('/send?t='+topic+'&body='+msg);         
+        }
+        function showMessage(message) {
+            const messages = document.getElementById("messages");
+            const listItem = document.createElement("li");
+            listItem.innerText = message;
+            messages.appendChild(listItem);
+        }
+    </script>
+</head>
+<body>
+ topic:<input id="topic" type="text"/> <br/>
+ msg: <input id="msg" type="text"/><br/>
+ <button onclick="ckSend()">SendTopic</button><br/>
+<p id="status"></p>
+<div id="err"></div>
+<ul id="messages"></ul>
+</body>
+</html>
+

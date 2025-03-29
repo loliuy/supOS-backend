@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.supos.gateway.dao.mapper.AuthMapper">
+
+
+
+    <select id="roleListByUserId" resultType="com.supos.common.dto.auth.RoleDto">
+        SELECT
+            ue.id AS user_id,
+            ue.username AS user_name,
+            ue.enabled,
+            r.id AS role_id,
+            r.name AS role_name,
+            r.description AS role_description,
+            r.client_role
+        FROM
+            user_entity ue
+                JOIN
+            user_role_mapping urm ON ue.id = urm.user_id
+                JOIN
+            keycloak_role r ON urm.role_id = r.id
+        WHERE
+            ue.id = #{userId}
+          AND ue.realm_id = (SELECT id FROM realm WHERE name = #{realm})
+    </select>
+    <select id="getPolicyIdsByRoleId" resultType="java.lang.String">
+        select t.policy_id
+        from policy_config t
+        where t."value" is not null and t."value" != ''
+          and t."name" = 'roles'
+          and t."value"::jsonb IS NOT NULL
+          and t."value"::jsonb @> ('[{"id": "' || #{roleId} || '"}]')::jsonb
+        GROUP BY t.policy_id
+
+    </select>
+    <select id="getResourceListByPolicyIds" resultType="com.supos.common.dto.auth.ResourceDto">
+        SELECT
+            rp.policy_id,rp.resource_id,ru."value" as uri
+        FROM
+            associated_policy ap
+                LEFT JOIN resource_policy rp ON ap.policy_id = rp.policy_id
+                LEFT JOIN resource_uris ru ON ru.resource_id = rp.resource_id
+        WHERE
+            ru.value != ''
+        AND
+            ap.associated_policy_id IN
+        <foreach item="id" index="index" collection="policyIds" open="(" separator="," close=")">
+            #{id}
+        </foreach>
+    </select>
+
+    <select id="userList" resultType="com.supos.common.vo.UserManageVo">
+        SELECT u.*,
+               STRING_AGG(r.name, ', ') AS roleList
+        FROM user_entity u
+                 JOIN user_role_mapping urm ON urm.user_id = u.id
+                 JOIN keycloak_role r ON urm.role_id = r.id
+        where u.realm_id = (SELECT id FROM realm WHERE name = #{realm})
+          AND r.client IS NOT NULL
+        GROUP BY u.id
+    </select>
+
+    <select id="getChildRoleListByCompositeRoleId" resultType="com.supos.common.dto.auth.RoleDto">
+        SELECT
+            r.id as roleId,
+            r.name as roleName,
+            r.description as roleDescription,
+            r.client_role as clientRole
+        FROM
+            keycloak_role r
+        WHERE
+            r.client = ( SELECT ID FROM client WHERE client_id = 'supos' )
+          AND  ID IN
+        <foreach item="id" index="index" collection="compositeRoleIds" open="(" separator="," close=")">
+            ( SELECT child_role FROM composite_role WHERE composite = #{id} )
+        </foreach>
+    </select>
+
+</mapper>

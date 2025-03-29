@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="com.supos.uns.dao.mapper.AlarmMapper" >
+
+
+    <select id="pageList" resultType="com.supos.uns.vo.AlarmVo" parameterType="com.supos.uns.vo.AlarmQueryVo">
+        SELECT
+            a._id, a.topic, a.current_value, a.limit_value, a.is_alarm, a.read_status, a._ct as createAt,
+            b.data_path AS rule_name,b.expression,b.refers
+        FROM
+        uns_alarms_data a LEFT JOIN uns_namespace b ON a.topic = b.path
+        WHERE
+            b.status = 1
+        <if test="params.topic != null and params.topic != ''">
+            AND a.topic = #{params.topic}
+        </if>
+        <if test="params.readStatus != null">
+            AND a.read_status = #{params.readStatus}
+        </if>
+        ORDER BY
+            a._ct DESC
+    </select>
+</mapper>

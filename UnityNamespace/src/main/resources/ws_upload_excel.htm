@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>UnsExcel Upload</title>
+</head>
+<body>
+
+<form id="uploadForm"  enctype="multipart/form-data">
+    <label for="fileUpload">SelectFile:</label>
+    <input type="file" id="fileUpload" name="file">
+    <button type="submit">ImportUns</button>
+</form>
+<p id="status"></p>
+<div id="err"></div>
+<ul id="messages"></ul>
+</body>
+</html>
+<script>
+
+       document.getElementById('uploadForm').addEventListener('submit', function(event) {
+                event.preventDefault();
+                var file = document.getElementById('fileUpload').files[0];
+                var formData = new FormData();
+                formData.append('file', file);
+
+                fetch('/inter-api/supos/uns/excel/template/import', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('status').innerText = 'Server response: ' + data;
+                    console.log('path: '+data.data);
+
+                    importUnsForExcel(data.data);
+                })
+                .catch(error => {
+                    document.getElementById('status').innerText = 'Error: ' + error.message;
+                });
+        });
+
+        function importUnsForExcel(excelId) {
+            excelId = encodeURIComponent(excelId);
+            const socket = new WebSocket('ws://localhost:8080/inter-api/supos/uns/ws?file='+excelId);
+
+            socket.onmessage = function(event) {
+                showMessage(event.data);
+                const d = event.data;
+                const code = d.code;
+                if(code == 206 && d['errTipFile'] != undefined ) {
+                  var et = document.getElementById('err')
+                  var filePath = encodeURIComponent(d.errTipFile)
+                  et.innerHTML = '<a href="/inter-api/supos/uns/excel/download?path=' +filePath+ '"/>Err</a>'
+                }
+            };
+            socket.onerror = function(error){
+                console.error('WebSocket encountered error: ', error);
+            };
+            socket.onclose = function(error){
+                console.log('WebSocket is closed now.');
+            };
+        }
+        function showMessage(message) {
+            const messages = document.getElementById("messages");
+            const listItem = document.createElement("li");
+            listItem.innerText = message;
+            messages.appendChild(listItem);
+        }
+    </script>

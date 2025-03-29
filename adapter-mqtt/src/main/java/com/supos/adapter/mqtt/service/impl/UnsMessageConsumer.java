@@ -1,0 +1,1123 @@
+package com.supos.adapter.mqtt.service.impl;
+
+import cn.hutool.core.collection.CollectionUtil;
+import cn.hutool.core.collection.ConcurrentHashSet;
+import cn.hutool.core.thread.RejectPolicy;
+import cn.hutool.core.thread.ThreadUtil;
+import cn.hutool.core.util.ArrayUtil;
+import cn.hutool.cron.timingwheel.TimerTask;
+import cn.hutool.extra.spring.SpringUtil;
+import com.alibaba.fastjson2.JSON;
+import com.bluejeans.common.bigqueue.BigArray;
+import com.bluejeans.common.bigqueue.BigQueue;
+import com.supos.adapter.mqtt.dto.FieldErrMsg;
+import com.supos.adapter.mqtt.dto.TopicDefinition;
+import com.supos.adapter.mqtt.dto.TopicMessage;
+import com.supos.adapter.mqtt.service.MQTTPublisher;
+import com.supos.adapter.mqtt.service.MessageConsumer;
+import com.supos.adapter.mqtt.util.SystemWheeledTimer;
+import com.supos.common.Constants;
+import com.supos.common.SrcJdbcType;
+import com.supos.common.adpater.TopicMessageConsumer;
+import com.supos.common.annotation.Description;
+import com.supos.common.dto.*;
+import com.supos.common.enums.FieldType;
+import com.supos.common.event.*;
+import com.supos.common.utils.*;
+import lombok.Getter;
+import lombok.extern.slf4j.Slf4j;
+import org.eclipse.paho.client.mqttv3.MqttException;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
+import org.springframework.stereotype.Service;
+import org.springframework.util.CollectionUtils;
+
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.temporal.TemporalAccessor;
+import java.util.*;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReadWriteLock;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.stream.Collectors;
+
+@Service
+@Slf4j
+public class UnsMessageConsumer implements MessageConsumer, TopicMessageConsumer {
+    private final ConcurrentHashMap<String, TopicDefinition> topicDefinitionMap = new ConcurrentHashMap<>();
+    private final ConcurrentHashSet<String> scheduleCalcTopics = new ConcurrentHashSet<>();
+
+    public Map<String, TopicDefinition> getTopicDefinitionMap() {
+        return topicDefinitionMap;
+    }
+
+    private final ExecutorService dataPublishExecutor = ThreadUtil.newFixedExecutor(Integer.parseInt(System.getProperty("sink.thread","4")), 100, "dbPub-", RejectPolicy.CALLER_RUNS.getValue());
+    private final ExecutorService topicSender = ThreadUtil.newFixedExecutor(2, 100, "topicSend-", RejectPolicy.CALLER_RUNS.getValue());
+
+    private static final String QUEUE_DIR = Constants.LOG_PATH + File.separator + "queue";
+    private final BigQueue queue = new BigQueue(QUEUE_DIR, "mqtt_queue_cache", 64 * 1024 * 1024);
+    private final ScheduledExecutorService queueConsumer = Executors.newSingleThreadScheduledExecutor(new ThreadFactory() {
+        final AtomicInteger threadNum = new AtomicInteger(0);
+
+        @Override
+        public Thread newThread(Runnable r) {
+            return new Thread(r, "BQConsumer-" + threadNum.incrementAndGet());
+        }
+    });
+
+    private final SystemWheeledTimer systemTimer = new SystemWheeledTimer();
+    private MQTTPublisher mqttPublisher;
+
+    private final AtomicLong enqueuedSize = new AtomicLong();
+    private final AtomicLong dequeuedSize = new AtomicLong();
+
+    private final AtomicLong publishedCalcSize = new AtomicLong();
+    private final AtomicLong arrivedCalcSize = new AtomicLong();
+
+    private final AtomicLong publishedMergeSize = new AtomicLong();
+
+    @Getter
+    private boolean sendTopic;
+
+    @Value("${MULTIPLE_TOPIC:false}")
+    public void setSendTopic(boolean sendTopic) {
+        this.sendTopic = sendTopic;
+    }
+
+    public long getEnqueuedSize() {
+        return enqueuedSize.get();
+    }
+
+    public long getDequeuedSize() {
+        return dequeuedSize.get();
+    }
+
+    public long getPublishedCalcSize() {
+        return publishedCalcSize.get();
+    }
+
+    public long getPublishedMergedSize() {
+        return publishedMergeSize.get();
+    }
+
+    public long getArrivedCalcSize() {
+        return arrivedCalcSize.get();
+    }
+
+    public void setMqttPublisher(MQTTPublisher mqttPublisher) {
+        this.mqttPublisher = mqttPublisher;
+    }
+
+    public UnsMessageConsumer() {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                queue.gc();
+                if (queue.isEmpty()) {
+                    queue.removeAll();
+                }
+                queue.close();
+            } catch (IOException e) {
+                log.error("Fail to Close BigQueue", e);
+            }
+        }));
+    }
+
+    public static int FETCH_SIZE = 500;
+    public static int MAX_WAIT_MILLS = 100;
+
+    private boolean subscribeALL;
+
+    @EventListener(classes = ContextRefreshedEvent.class)
+    @Order(1)
+    void init() {
+        if (mqttPublisher == null) {
+            mqttPublisher = SpringUtil.getBean(MQTTPublisher.class);
+        }
+        mqttPublisher.unSubscribe(List.of(Constants.RESULT_TOPIC_PREV + "#"));
+        try {
+            mqttPublisher.subscribe(List.of("#"), true);
+            subscribeALL = true;
+        } catch (Exception ex) {
+            log.warn("mqtt 无法订阅所有 {}", ex.getMessage());
+        }
+
+        systemTimer.start();
+        queueConsumer.schedule((Runnable) () -> {
+            TreeMap<SrcJdbcType, HashMap<String, SaveDataDto>> typedDataMap = new TreeMap<>();
+            while (true) {
+                try {
+                    fetchData(typedDataMap);
+                } catch (InterruptedException ec) {
+                    log.warn("消費已取消!");
+                } catch (Exception e) {
+                    log.error("消费异常", e);
+                    try {
+                        queue.peek();
+                    } catch (Throwable ex) {
+                        log.error("队列不可用(size={})，清空重建! {}", queue.size(), ex.getMessage());
+                        queueLocker.writeLock().lock();
+                        try {
+                            queue.removeAll();
+                            int permits = this.semaphore.availablePermits();
+                            if (permits > 0) {
+                                boolean ok = this.semaphore.tryAcquire(permits);
+                                log.warn("丢弃许可: {} {}, size={}", permits, ok, queue.size());
+                            } else {
+                                log.warn("重建后: size={}", queue.size());
+                            }
+                        } finally {
+                            queueLocker.writeLock().unlock();
+                        }
+
+                    }
+                } finally {
+                    queue.gc();
+                }
+            }
+        }, 2, TimeUnit.SECONDS);
+    }
+
+    private void fetchData(Map<SrcJdbcType, HashMap<String, SaveDataDto>> typedDataMap) throws Exception {
+        int headSpendPerms = 0;
+        if (queue.isEmpty()) {
+            semaphore.acquire();
+            headSpendPerms = 1;
+        }
+        final int fetchSize = FETCH_SIZE;
+        final int maxWait = MAX_WAIT_MILLS;
+        List<byte[]> dataList = new ArrayList<>(fetchSize);
+        final long fetchStartTime = System.currentTimeMillis();
+        int spendPerms = 0, tryPerms;
+        long maxWaitMills;
+        while ((tryPerms = fetchSize - dataList.size()) > 0 && (maxWaitMills = maxWait - (System.currentTimeMillis() - fetchStartTime)) > 0) {
+            if (semaphore.tryAcquire(tryPerms, maxWaitMills, TimeUnit.MILLISECONDS)) {
+                spendPerms += tryPerms;
+            }
+            if (!queue.isEmpty()) {
+                List<byte[]> fetched = queue.dequeueMulti(tryPerms);
+                if (!fetched.isEmpty()) {
+                    dataList.addAll(fetched);
+                }
+            }
+        }
+        int leftPerms = dataList.size() - spendPerms - headSpendPerms;
+        if (leftPerms > 0) {
+            semaphore.acquire(leftPerms);
+        }
+        if (!dataList.isEmpty()) {
+            dequeuedSize.getAndAdd(dataList.size());
+            for (byte[] dataBs : dataList) {
+                String json = new String(dataBs, StandardCharsets.UTF_8);
+                TopicMessage msg = JSON.parseObject(json, TopicMessage.class);
+                String topic = msg.getTopic();
+                TopicDefinition definition = topicDefinitionMap.get(topic);
+                if (definition != null) {
+                    List<Map<String, Object>> list = msg.getMsg();
+                    HashMap<String, SaveDataDto> topicData = typedDataMap.computeIfAbsent(definition.getJdbcType(), k -> new HashMap<>());
+                    SaveDataDto dataDto = topicData.computeIfAbsent(definition.getTopic(), k -> new SaveDataDto(topic, definition.getTable(), definition.getFieldDefines(), new LinkedList<>()));
+                    dataDto.setCreateTopicDto(definition.getCreateTopicDto());
+                    dataDto.getList().addAll(list);
+                }
+            }
+            sendData(typedDataMap);
+        }
+    }
+
+    private void sendData(Map<SrcJdbcType, HashMap<String, SaveDataDto>> typedDataMap) {
+
+        for (Map.Entry<SrcJdbcType, HashMap<String, SaveDataDto>> entry : typedDataMap.entrySet()) {
+
+            TreeMap<TopicDefinition, SaveDataDto> calcMap = new TreeMap<>(
+                    Comparator.comparingInt(TopicDefinition::getDataType) // 假如有以下依赖关系，告警->计算实例->时序实例，保障按依赖顺序排序
+                            .thenComparingInt(System::identityHashCode));
+
+            SrcJdbcType jdbcType = entry.getKey();
+            HashMap<String, SaveDataDto> topicData = entry.getValue();
+            long countRecords = 0;
+            Iterator<Map.Entry<String, SaveDataDto>> itr = topicData.entrySet().iterator();
+            while (itr.hasNext()) {
+                SaveDataDto dto = itr.next().getValue();
+                String topic = dto.getTopic();
+                TopicDefinition definition = topicDefinitionMap.get(topic);
+                if (definition == null) {
+                    log.warn("{} 已被删除!", topic);
+                    itr.remove();
+                    continue;
+                }
+                countRecords += dto.getList().size();
+                if (definition.getCompileExpression() != null) {
+                    arrivedCalcSize.getAndAdd(dto.getList().size());
+                }
+                Set<String> calcTopics = definition.getReferCalcTopics();
+                if (calcTopics != null && calcTopics.size() > 0) {
+                    for (String calcTopic : calcTopics) {
+                        TopicDefinition calc = topicDefinitionMap.get(calcTopic);
+                        if (calc != null) {
+                            calcMap.compute(calc, (k, oldV) -> oldV == null || oldV.getList().size() < dto.getList().size() ? dto : oldV);
+                        } else {
+                            log.debug("calc TopicDefinitionNotFound: {}", calcTopic);
+                        }
+                    }
+                }
+            }
+            this.computeCalcTopic(calcMap, topicData);
+
+            HashMap<String, SaveDataDto> tableData = new HashMap<>(topicData.size());
+            for (SaveDataDto d : topicData.values()) {
+                TopicDefinition definition = topicDefinitionMap.get(d.getTopic());
+                if (definition != null && definition.isSave2db()) {
+                    String table = d.getTable(), topic = d.getTopic();
+                    if (definition.getFieldDefines().getFieldsMap().containsKey("topic")) {
+                        for (Map<String, Object> map : d.getList()) {
+                            map.put("topic", topic);
+                        }
+                    }
+                    SaveDataDto data = tableData.get(table);
+                    if (data != null) {
+                        data.getList().addAll(d.getList());
+                    } else {
+                        tableData.put(table, d);
+                    }
+                }
+            }
+            if (log.isDebugEnabled()) {
+                log.debug("publishData: {}, size={}, dataLen={}, topics={}", jdbcType.name(), countRecords, tableData.size(), tableData.keySet());
+            }
+            topicData.clear();
+            if (tableData.size() > 0) {
+                SaveDataEvent event = new SaveDataEvent(this, jdbcType, tableData.values().toArray(new SaveDataDto[0]));
+                dataPublishExecutor.submit(() -> EventBus.publishEvent(event));
+            }
+        }
+    }
+
+    private void computeCalcTopic(Map<TopicDefinition, SaveDataDto> calcMap, HashMap<String, SaveDataDto> topicData) {
+        AtomicInteger count = new AtomicInteger(0);
+        for (Map.Entry<TopicDefinition, SaveDataDto> entry : calcMap.entrySet()) {
+            count.set(0);
+            TopicDefinition calc = entry.getKey();
+            SaveDataDto dto = entry.getValue();
+            String calcTopic = calc.getTopic();
+            Map<Long, Object[]> calcRs = tryCalc(topicDefinitionMap, calc, dto, topicData, count);
+            if (calcRs != null) {
+                Object oldRsValue = null;
+                Object oldValue = null;
+                Long lastAlarmTime = null;
+
+                FieldDefine calcField = calc.getFieldDefines().getCalcField();
+                for (Map.Entry<Long, Object[]> rsEntry : calcRs.entrySet()) {
+                    Long minTime = rsEntry.getKey();
+                    Object[] vs = rsEntry.getValue();
+                    Object evalRs = vs[0];// 计算表达式的值
+                    if (evalRs == null) {
+                        continue;
+                    }
+                    Map<String, Object> vars = (Map<String, Object>) vs[1];// 引用的其他变量值
+                    StringBuilder jsonVal = new StringBuilder(128);
+                    jsonVal.append("{\"").append(Constants.SYS_FIELD_CREATE_TIME).append("\":").append(minTime).append(",\"")
+                            .append(calcField.getName()).append("\":");
+                    if (evalRs instanceof Long) {
+                        jsonVal.append(evalRs);
+                    } else {
+                        jsonVal.append("\"").append(evalRs).append('"');
+                    }
+                    if (vars.size() == 1 && calc.getFieldDefines().getFieldsMap().containsKey(AlarmRuleDefine.FIELD_CURRENT_VALUE)) {
+                        AlarmRuleDefine alarmRuleDefine = calc.getAlarmRuleDefine();
+                        Object currentValue = vars.values().iterator().next();
+                        if (alarmRuleDefine != null) { // 告警的情况
+                            Map<String, Object> lastMsg = calc.getLastMsg();
+                            if (oldRsValue == null && lastMsg != null) {
+                                oldRsValue = lastMsg.get(AlarmRuleDefine.FIELD_IS_ALARM);
+                                if (oldRsValue != null && !(oldRsValue instanceof Boolean)) {
+                                    oldRsValue = Boolean.valueOf(oldRsValue.toString());
+                                }
+                                oldValue = lastMsg.get(AlarmRuleDefine.FIELD_CURRENT_VALUE);
+                            }
+                            if (!(evalRs instanceof Boolean)) {
+                                evalRs = Boolean.valueOf(evalRs.toString());
+                            }
+                            final boolean isAlarm = (Boolean) evalRs;
+                            if (evalRs.equals(oldRsValue)) {
+                                log.debug("告警表达式结果没变，忽略：val={}, topic={}, rs = {}", currentValue, calc.getTopic(), evalRs);
+                                continue;
+                            } else if (oldRsValue == null && !isAlarm) {
+                                log.info("忽略首次告警消失：val={}, topic={}", currentValue, calc.getTopic());
+                                continue;
+                            }
+                            Double deadBand = alarmRuleDefine.getDeadBand();
+                            Long overTime = alarmRuleDefine.getOverTime();
+                            if (!isAlarm && oldValue != null && deadBand != null) {
+                                Double d1 = Double.parseDouble(currentValue.toString());
+                                Double d2 = Double.parseDouble(oldValue.toString());
+
+                                Integer deadBandType = alarmRuleDefine.getDeadBandType();
+                                if (deadBandType == null) {
+                                    deadBandType = 1;
+                                }
+                                double diff = deadBand;
+                                if (deadBandType == 2) {//百分比
+                                    diff = deadBand / 100;
+                                }
+                                if (Math.abs(d1 - d2) < diff) {
+                                    log.debug("告警在死区，忽略：val={}, topic={}", currentValue, calc.getTopic());
+                                    continue;
+                                }
+                            } else if (isAlarm && overTime != null) {
+
+                                if (lastAlarmTime == null && lastMsg != null) {
+                                    Object lastTimeObj = lastMsg.get(Constants.SYS_FIELD_CREATE_TIME);
+                                    if (lastTimeObj instanceof Long) {
+                                        lastAlarmTime = DateTimeUtils.convertToMills((Long) lastTimeObj);
+                                    }
+                                }
+                                if (lastAlarmTime != null) {
+                                    //统一单位为毫秒
+                                    long timeB = DateTimeUtils.convertToMills(minTime);
+                                    long diffSeconds = Math.abs(lastAlarmTime - timeB) / 1000;
+                                    if (diffSeconds < overTime) {
+                                        log.debug("告警在越限时长，忽略：val={}, topic={}", currentValue, calc.getTopic());
+                                        continue;
+                                    }
+                                }
+                            }
+                            if (lastMsg != null) {
+                                lastMsg.put(AlarmRuleDefine.FIELD_IS_ALARM, evalRs);
+                                lastMsg.put(AlarmRuleDefine.FIELD_CURRENT_VALUE, currentValue);
+                            }
+                            oldRsValue = evalRs;
+                            oldValue = currentValue;
+                            if (isAlarm) {
+                                lastAlarmTime = System.currentTimeMillis();
+                            }
+
+                            jsonVal.append(",\"").append(AlarmRuleDefine.FIELD_LIMIT_VALUE).append("\":\"").append(alarmRuleDefine.getLimitValue()).append('"');
+                            jsonVal.append(",\"").append(AlarmRuleDefine.FIELD_ID).append("\":").append(AlarmRuleDefine.nextId());
+                        }
+                        jsonVal.append(",\"").append(AlarmRuleDefine.FIELD_CURRENT_VALUE).append("\":").append(currentValue);
+                    }
+                    jsonVal.append('}');
+                    String msg = jsonVal.toString();
+                    topicSender.submit(() -> {
+                        log.debug("发送计算值：{}: {}", calcTopic, msg);
+                        try {
+                            mqttPublisher.publishMessage(calcTopic, msg.getBytes(StandardCharsets.UTF_8), 1);
+                            publishedCalcSize.incrementAndGet();
+                        } catch (MqttException e) {
+                            log.error("ErrPublishCalcMsg: topic=" + calcTopic + ", data=" + jsonVal, e);
+                        }
+                    });
+                }
+            } else {
+                log.warn("NO 计算值：{}", calcTopic);
+            }
+        }
+    }
+
+
+    void uncaughtException(Thread t, Throwable e) {
+        log.error("发送数据失败: " + t.getName(), e);
+    }
+
+
+    public long getQueueSize() {
+        return queue.size();
+    }
+
+    public long getQueueFrontIndex() {
+        try {
+            Field field = queue.getClass().getDeclaredField("queueFrontIndex");
+            field.setAccessible(true);
+            AtomicLong queueFrontIndex = (AtomicLong) field.get(queue);
+            return queueFrontIndex.get();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    public long getQueueTailIndex() {
+        try {
+            Field field = queue.getClass().getDeclaredField("innerArray");
+            field.setAccessible(true);
+            BigArray queueFrontIndex = (BigArray) field.get(queue);
+            return queueFrontIndex.getHeadIndex();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    public String getQueueHead() {
+        byte[] head = queue.peek();
+        if (head != null && head.length > 0) {
+            return new String(head, StandardCharsets.UTF_8);
+        }
+        return null;
+    }
+
+    private final Semaphore semaphore;
+
+    {
+        try {
+            queue.peek();
+        } catch (Throwable ex) {
+            log.error("队列不可用，清空重建! {}", ex.getMessage());
+            queue.removeAll();
+        }
+        long queueSize = queue.size();
+        if (queueSize < Integer.MAX_VALUE) {
+            log.info("队列初始尺寸：{}", queueSize);
+            semaphore = new Semaphore((int) queueSize);
+            enqueuedSize.set(queueSize);
+        } else {
+            log.warn("队列初始尺寸太大：{}, 准备清空重建..", queueSize);
+            queue.removeAll();
+            semaphore = new Semaphore(0);
+        }
+    }
+
+    private final ReadWriteLock queueLocker = new ReentrantReadWriteLock(true);
+    private static final byte GMQTT_MAGIC_HEAD0 = 9;
+    private static final byte GMQTT_MAGIC_HEAD1 = 7;
+
+    private static long bigEndianBytesToUInt32(byte[] bytes, int offset) {
+        return ((bytes[offset] & 0xFFL) << 24) |
+                ((bytes[offset + 1] & 0xFFL) << 16) |
+                ((bytes[offset + 2] & 0xFFL) << 8) |
+                (bytes[offset + 3] & 0xFFL);
+    }
+
+
+    @Override
+    public void onMessage(String topic, int msgId, String payload) {
+        TopicDefinition definition = topicDefinitionMap.get(topic);
+        if (definition == null) {
+            log.debug("TopicDefinition NotFound[{}] : payload = {}", topic, payload);
+            if (subscribeALL && !topic.startsWith(Constants.RESULT_TOPIC_PREV)) {
+                TopicMessageEvent event = new TopicMessageEvent(this, topic, payload);
+                dataPublishExecutor.submit(() -> {
+                    this.topicSender.submit(() -> EventBus.publishEvent(event));
+                });
+            }
+            return;
+        }
+        FieldDefines fieldDefines = definition.getFieldDefines();
+        final Instant nowInstant = Instant.now();
+        final long nowInMills = nowInstant.toEpochMilli();
+        byte[] bytes = payload.getBytes(StandardCharsets.UTF_8);
+        boolean preProcessed = false;// 消息是否被预处理过
+        String src = null;
+        if (bytes.length > 6 && bytes[0] == GMQTT_MAGIC_HEAD0 && bytes[1] == GMQTT_MAGIC_HEAD1) {
+            long origLength = bigEndianBytesToUInt32(bytes, 2);
+            if (origLength > 0 && origLength < bytes.length) {
+                preProcessed = true;
+                int size = (int) origLength;
+                src = new String(bytes, 6, size);
+                String after = src;
+                int left = bytes.length - (6 + size);
+                if (left > 0) {
+                    after = new String(bytes, 6 + size, left);
+                }
+                payload = after;
+                if (after.startsWith("ERROR:")) {// 预处理返回报错信息
+                    if (after.length() > 8 && after.charAt(6) == '{' && after.charAt(after.length() - 1) == '}') {
+                        // field error
+                        String errMsg = after.substring(6);
+                        FieldErrMsg errorField = JsonUtil.fromJson(errMsg, FieldErrMsg.class);
+                        if (errorField.getCode() == 2) {
+                            errMsg = I18nUtils.getMessage("uns.invalid.toLong", errorField.getField());
+                        } else {
+                            errMsg = I18nUtils.getMessage("uns.invalid.type", errorField.getField());
+                        }
+                        sendProcessedTopicMessage(nowInMills, definition, src, null, errMsg, false);
+                    } else {
+                        sendErrMsg(topic, payload, nowInMills, definition, src);// json error
+                    }
+                    return;
+                }
+
+            }
+        }
+        Object vo;
+        try {
+            vo = JsonUtil.fromJson(payload);
+        } catch (Exception ex) {
+            sendErrMsg(topic, payload, nowInMills, definition, src);
+            return;
+        }
+        List<Map<String, Object>> list;
+        if (preProcessed) {// 预处理过的不再校验格式
+            char c0 = payload.charAt(0);
+            if (c0 == '{') {
+                list = Collections.singletonList((Map)vo);
+            } else if (c0 == '[') {
+                list = (List<Map<String, Object>>) vo;
+            } else {
+                list = Collections.emptyList();
+            }
+        } else {
+            if (payload.charAt(0) == '{' && vo instanceof Map) {
+                Map map = (Map) vo;
+                Object raw = map.get(Constants.MSG_RAW_DATA_KEY);
+                if (raw != null) {
+                    src = JSON.toJSONString(raw);
+                    if ("".equals(src)) {
+                        src = "{}";
+                    }
+                }
+                Object res = map.get(Constants.MSG_RES_DATA_KEY);
+                if (res != null) {
+                    vo = res;
+                }
+            }
+            FindDataListUtils.SearchResult rs = FindDataListUtils.findDataList(vo, 1, fieldDefines);
+            list = rs.list;
+            log.debug("onMsg[{}]: list[{}]={}, src={}, payload={}", topic, list != null ? list.size() : -1, list, src, payload);
+            if (src == null) {
+                src = payload;
+            }
+            if (list == null || list.isEmpty() || rs.errorField != null || rs.toLongField != null) {
+                TopologyLog.log(topic, TopologyLog.Node.PULL_MQTT, TopologyLog.EventCode.ERROR, I18nUtils.getMessage("uns.topology.mqtt.parse"));
+                log.warn("DataListNotFound[{}] : payload = {}", topic, payload);
+                String err = null;
+                if (rs.errorField != null) {
+                    err = I18nUtils.getMessage("uns.invalid.type", rs.errorField);
+                }
+                if (rs.toLongField != null) {
+                    String tip = I18nUtils.getMessage("uns.invalid.toLong", rs.toLongField);
+                    err = err != null ? err + "; " + tip : tip;
+                }
+                sendProcessedTopicMessage(nowInMills, definition, src, null, err, sendTopic);
+                return;
+            }
+        }
+        list = mergeBeansWithTimestamp(list, definition, nowInMills);
+        final long msgTimeMills;
+        Long lastBeanTime = definition.getLastDateTime();
+        if (lastBeanTime != null) {
+            msgTimeMills = DateTimeUtils.convertToMills(lastBeanTime);
+        } else {
+            msgTimeMills = nowInMills;
+        }
+        sendProcessedTopicMessage(msgTimeMills, definition, src, list, null, !preProcessed && sendTopic);
+
+        queueLocker.readLock().lock();
+        try {
+            queue.enqueue(JsonUtil.toJsonBytes(new TopicMessage(topic, list)));
+            enqueuedSize.incrementAndGet();
+            semaphore.release();
+        } finally {
+            queueLocker.readLock().unlock();
+        }
+    }
+
+    private void sendErrMsg(String topic, String payload, long nowInMills, TopicDefinition definition, String src) {
+        TopologyLog.log(topic, TopologyLog.Node.PULL_MQTT, TopologyLog.EventCode.ERROR, I18nUtils.getMessage("uns.topology.mqtt.parse"));
+        log.warn("bad JSON[{}] : payload = {}, src={}", topic, payload, src);
+        sendProcessedTopicMessage(nowInMills, definition, src, null, I18nUtils.getMessage("uns.invalid.json"), false);
+    }
+
+    private void sendProcessedTopicMessage(final long nowInMills, TopicDefinition definition, String rawData, List<Map<String, Object>> dataToSend, String errMsg, boolean sendTopic) {
+        String topic = definition.getTopic();
+        TopicMessageEvent event = new TopicMessageEvent(
+                this,
+                definition.getFieldDefines().getFieldsMap(),
+                topic,
+                definition.getCreateTopicDto().getProtocolType(),
+                dataToSend != null ? dataToSend.get(dataToSend.size() - 1) : null,
+                definition.getLastMsg(),
+                definition.getLastDt(),
+                rawData,
+                nowInMills,
+                errMsg);
+        dataPublishExecutor.submit(() -> {
+            this.topicSender.submit(() -> EventBus.publishEvent(event));
+        });
+        if (sendTopic && dataToSend != null) {
+            try {
+                mqttPublisher.publishMessage(Constants.RESULT_TOPIC_PREV + topic, JSON.toJSONBytes(dataToSend.size() == 1 ? dataToSend.get(0) : dataToSend), 1);
+            } catch (MqttException e) {
+                log.error("ErrPublishMsg: topic=" + topic + ", data=" + dataToSend, e);
+            }
+        }
+    }
+
+    private static List<Map<String, Object>> mergeBeansWithTimestamp(List<Map<String, Object>> list, TopicDefinition definition, long nowInMills) {
+        Long prevTime = null;
+        ConcurrentHashMap<String, Object> lastMsg = definition.getLastMsg();
+        ConcurrentHashMap<String, Long> dtMap = definition.getLastDt();
+        Map<String, Object> prevBean = new HashMap<>();
+        if (lastMsg != null) {
+            Object lastTime = lastMsg.get(Constants.SYS_FIELD_CREATE_TIME);
+            if (lastTime instanceof Long) {
+                prevTime = (Long) lastTime;
+                final long pt = prevTime;
+                for (Map.Entry<String, Long> dt : dtMap.entrySet()) {
+                    String k = dt.getKey();
+                    if (dt.getValue() == pt) {
+                        prevBean.put(k, lastMsg.get(k));
+                    }
+                }
+            }
+        } else {
+            definition.setLastMsg(lastMsg = new ConcurrentHashMap<>());
+            definition.setLastDt(dtMap = new ConcurrentHashMap<>());
+        }
+        final Long lastUpdateTime = definition.getLastDateTime();
+        final ArrayList<Map<String, Object>> mergedList = new ArrayList<>(list.size());
+        final boolean mergeTime = definition.getJdbcType().typeCode == Constants.TIME_SEQUENCE_TYPE;// 时序数据都按时间戳合并
+        for (Map<String, Object> bean : list) {
+            Object lastBeanTime = bean.computeIfAbsent(Constants.SYS_FIELD_CREATE_TIME, k -> nowInMills);
+            if (lastBeanTime instanceof String) {
+                try {
+                    TemporalAccessor tm = ZonedDateTime.parse(lastBeanTime.toString());
+                    lastBeanTime = Instant.from(tm).toEpochMilli();
+                    bean.put(Constants.SYS_FIELD_CREATE_TIME, lastBeanTime);
+                } catch (Exception ex) {
+                    log.debug("DateTimeFormatError: {}", bean, ex);
+                }
+            }
+            if (!(lastBeanTime instanceof Long)) {
+                bean.put(Constants.SYS_FIELD_CREATE_TIME, lastBeanTime = nowInMills);
+            }
+            Long curTime = (Long) lastBeanTime;
+            if (mergeTime && prevTime != null && curTime.longValue() == prevTime.longValue()) {
+                if (!mergedList.isEmpty()) {
+                    Map<String, Object> last = mergedList.get(mergedList.size() - 1);
+                    Map<String, Object> mm = new HashMap<>(last);
+                    mm.putAll(bean);
+                    mergedList.set(mergedList.size() - 1, mm);
+                } else {
+                    Map<String, Object> mm = new HashMap<>(prevBean);
+                    mm.putAll(bean);
+                    mergedList.add(mm);
+                }
+            } else {
+                mergedList.add(bean);
+            }
+            prevTime = curTime;
+            prevBean = bean;
+            for (Map.Entry<String, Object> entry : bean.entrySet()) {
+                String k = entry.getKey();
+                Object v = entry.getValue();
+                if (v != null) {
+                    lastMsg.put(k, v);
+                }
+                dtMap.put(k, curTime);
+            }
+            definition.setLastDateTime(curTime);
+        }
+        log.debug("merge: {} -> {}", list, mergedList);
+
+        Map<String, FieldDefine> fieldsMap = definition.getFieldDefines().getFieldsMap();
+        if (lastMsg.size() > fieldsMap.size() || (lastUpdateTime == null || nowInMills - lastUpdateTime > 5000)) {
+            ConcurrentHashMap<String, Long> dt = dtMap;
+            lastMsg.keySet().removeIf(field -> {
+                boolean invalid = !fieldsMap.containsKey(field);
+                if (invalid) {
+                    dt.remove(field);
+                }
+                return invalid;
+            });
+        }
+        return mergedList;
+    }
+
+    static Map<Long, Object[]> tryCalc(Map<String, TopicDefinition> topicDefinitionMap, TopicDefinition calc, SaveDataDto cur, HashMap<String, SaveDataDto> topicData, AtomicInteger count) {
+        if (calc == null) {
+            log.debug("TopicDefinitionNotFound: curTopic={}", cur.getTopic());
+            return null;
+        }
+        final int CUR_SIZE = cur.getList().size();
+        String calcTopic = calc.getTopic();
+        FieldDefine calcField = calc.getFieldDefines().getCalcField();
+        log.debug("tryCalc: {} when proc:{}, list[{}] = {}", calcTopic, cur.getTopic(), CUR_SIZE, cur.getList());
+        Object expr = calc.getCompileExpression();
+        if (expr == null) {
+            log.debug("CompileExpressionNull when topic={}", calcTopic);
+            return null;
+        }
+        if (calcField == null) {
+            log.debug("calcFieldNotFound when topic={}", calcTopic);
+            return null;
+        }
+        LinkedHashMap<Long, Object[]> rsMap = new LinkedHashMap<>();
+        for (int K = 0; K < CUR_SIZE; K++) {
+            InstanceField[] refers = calc.getRefers();
+            Map<String, Object> vars = Collections.emptyMap();
+            long minTime = Long.MAX_VALUE;
+            if (ArrayUtil.isNotEmpty(refers)) {
+                vars = new HashMap<>(Math.max(refers.length, 8));
+                boolean next = true;
+                for (int i = 0; i < refers.length; i++) {
+                    InstanceField field = refers[i];
+                    if (field != null && field.getField() != null) {
+                        Long timestamp = fillVars(topicDefinitionMap, calcTopic, topicData, vars, i, field);
+                        if (timestamp != null) {
+                            if (timestamp.longValue() < minTime) {
+                                minTime = timestamp.longValue();
+                            }
+                        } else {
+                            next = false;
+                            break;
+                        }
+                    }
+                }
+                if (!next) {
+                    clearState(topicData);
+                    log.debug("No timestamp for calcTopic: {} {}", calcTopic, K);
+                    return null;
+                }
+            }
+
+            Object evalRs = ExpressionFunctions.executeExpression(expr, vars);
+            FieldType fieldType = calcField.getType();
+            if (evalRs instanceof Number) {
+                Number num = (Number) evalRs;
+                if (fieldType == FieldType.BOOLEAN) {
+                    evalRs = num.longValue() != 0;
+                } else {
+                    switch (fieldType) {
+                        case INT:
+                        case LONG:
+                            evalRs = num.longValue();
+                            break;
+                    }
+                }
+            } else if (evalRs instanceof Boolean) {
+                if (fieldType.isNumber) {
+                    Boolean v = (Boolean) evalRs;
+                    evalRs = v ? 1 : 0;
+                }
+            }
+            if (evalRs == null) {
+                evalRs = 1;
+            }
+            rsMap.put(minTime, new Object[]{evalRs, vars});
+
+            count.incrementAndGet();
+        }
+        clearState(topicData);
+        return rsMap;
+    }
+
+    private static void clearState(HashMap<String, SaveDataDto> topicData) {
+        for (SaveDataDto dto : topicData.values()) {
+            dto.setListItr(null);
+        }
+    }
+
+    private static Long fillVars(Map<String, TopicDefinition> topicDefinitionMap, String calcTopic, HashMap<String, SaveDataDto> topicData, Map<String, Object> vars, int i, InstanceField field) {
+        String topic = field.getTopic(), f = field.getField();
+        TopicDefinition ref = topicDefinitionMap.get(topic);
+        if (ref == null) {
+            log.warn("未知Topic: {}", topic);
+            return null;
+        }
+
+        SaveDataDto dto = topicData.get(topic);
+        Iterator<Map<String, Object>> listItr = null;
+        if (dto != null) {
+            listItr = dto.getListItr();
+            if (listItr == null && !CollectionUtils.isEmpty(dto.getList())) {
+                dto.setListItr(listItr = dto.getList().iterator());
+            }
+        }
+        Map<String, Object> lastMsg = ref.getLastMsg();
+        if (lastMsg == null) {
+            lastMsg = Collections.emptyMap();
+        }
+        Map<String, Object> msg = lastMsg;
+        if (listItr != null && listItr.hasNext()) {
+            msg = listItr.next();
+            if (msg == null) {
+                msg = Collections.emptyMap();
+            }
+        }
+        Object v;
+        Long timestamp = null;
+        FieldDefine fieldDefine = ref.getFieldDefines().getFieldsMap().get(f);
+        if (fieldDefine != null && ((v = msg.get(f)) != null || (v = lastMsg.get(f)) != null)) {
+            Long time = (Long) msg.get(Constants.SYS_FIELD_CREATE_TIME);
+            if (time != null) {
+                timestamp = time;
+            }
+            FieldType fieldType = fieldDefine.getType();
+            if (fieldType.isNumber) {
+                if (fieldType == FieldType.INT) {
+                    v = IntegerUtils.parseInt(v.toString());
+                } else {
+                    try {
+                        v = Double.parseDouble(v.toString());
+                    } catch (Exception ex) {
+                        log.debug("{}.{} IsNaN: {}, When Double", v, topic, f);
+                    }
+                }
+                if (v == null) {
+                    v = 0;
+                }
+            } else if (fieldType == FieldType.BOOLEAN && !(v instanceof Boolean)) {
+                Integer num = IntegerUtils.parseInt(v.toString());
+                if (num != null) {
+                    v = num != 0;
+                } else {
+                    try {
+                        double dv = Double.parseDouble(v.toString());
+                        v = dv > 0;
+                    } catch (Exception ex) {
+                        log.debug("{}.{} IsNaN: {}, when Boolean", v, topic, f);
+                        v = false;
+                    }
+                }
+            }
+            vars.put(Constants.VAR_PREV + (i + 1), v);
+        } else {
+            log.debug("引用还没有值： {}.{}, calcTopic={}", topic, f, calcTopic);
+            return null;
+        }
+        return timestamp;
+    }
+
+    @EventListener(classes = RemoveTopicsEvent.class)
+    @Order(100)
+    void onRemoveTopicsEvent(RemoveTopicsEvent event) {
+        if (!CollectionUtils.isEmpty(event.topics)) {
+            HashSet<String> prevSetForDel = new HashSet<>(16);
+            for (String topic : event.topics.keySet()) {
+                String prev = parseTopLevel(topic);
+                if (prev != null) {
+                    prevSetForDel.add(prev);
+                }
+                TopicDefinition definition = topicDefinitionMap.remove(topic);
+                if (definition != null && definition.getDataType() == Constants.REFER_TYPE) {
+                    scheduleCalcTopics.remove(topic);
+                }
+            }
+            reCalculateRefers();
+            if (!prevSetForDel.isEmpty()) {
+
+                Set<String> currentPrevSet = topicDefinitionMap.keySet().stream().map(t -> {
+                    String prev = parseTopLevel(t);
+                    return prev != null ? prev : "";
+                }).collect(Collectors.toSet());
+
+                Collection<String> unSubscribes = CollectionUtil.subtract(prevSetForDel, currentPrevSet);
+                if (!unSubscribes.isEmpty()) {
+                    log.info("取消订阅：{}", prevSetForDel);
+                    mqttPublisher.unSubscribe(prevSetForDel);
+                }
+            }
+
+        }
+    }
+
+    @EventListener(classes = BatchCreateTableEvent.class)
+    @Order(1900)
+    @Description("uns.create.task.name.mqtt")
+    void onBatchCreateTable(BatchCreateTableEvent event) {
+        if (!ArrayUtil.isEmpty(event.topics)) {
+            TreeSet<String> topLevels = new TreeSet<>();
+            for (CreateTopicDto[] dtoArray : event.topics.values()) {
+                for (CreateTopicDto dto : dtoArray) {
+
+                    String prev = parseTopLevel(dto.getTopic());
+                    topLevels.add(prev);
+                    addTopicFields(dto);
+                }
+            }
+            reCalculateRefers();
+            log.info("+订阅：{}", topLevels);
+            if (!subscribeALL) {
+                mqttPublisher.subscribe(topLevels, false);
+            }
+        }
+    }
+
+    @EventListener(classes = InitTopicsEvent.class)
+    @Order(99)
+    void onInitTopicsEvent(InitTopicsEvent event) {
+        if (!CollectionUtils.isEmpty(event.topics)) {
+            TreeSet<String> topLevels = new TreeSet<>();
+            for (List<CreateTopicDto> list : event.topics.values()) {
+                for (CreateTopicDto dto : list) {
+                    String prev = parseTopLevel(dto.getTopic());
+                    topLevels.add(prev);
+                    addTopicFields(dto);
+                }
+            }
+            reCalculateRefers();
+            log.info("初始订阅：{}", topLevels);
+            if (!subscribeALL) {
+                mqttPublisher.subscribe(topLevels, false);
+            }
+        }
+    }
+
+    private static String parseTopLevel(String topic) {
+        int x = topic.indexOf('/', 1);
+        if (x > 0) {
+            return topic.substring(0, x + 1) + "#";
+        } else {
+            return topic;
+        }
+    }
+
+    @EventListener(classes = UpdateCalcInstanceEvent.class)
+    @Order(99)
+    void onUpdateCalcInstanceEvent(UpdateCalcInstanceEvent event) {
+        if (!CollectionUtils.isEmpty(event.topics)) {
+            for (CreateTopicDto dto : event.topics) {
+                addTopicFields(dto);
+            }
+            reCalculateRefers();
+        }
+    }
+
+    private void reCalculateRefers() {
+        for (TopicDefinition definition : topicDefinitionMap.values()) {
+            InstanceField[] refers = definition.getRefers();
+            Set<String> refTopics;
+            if (ArrayUtil.isNotEmpty(refers)) {
+                String calcTopic = definition.getTopic();
+                for (InstanceField field : refers) {
+                    if (field != null && field.getField() != null) {
+                        TopicDefinition def = topicDefinitionMap.get(field.getTopic());
+                        if (def != null) {
+                            def.addReferCalcTopic(calcTopic);
+                        }
+                    }
+                }
+            } else if ((refTopics = definition.getReferCalcTopics()) != null) {
+                Iterator<String> refItr = refTopics.iterator();
+                while (refItr.hasNext()) {
+                    String refTopic = refItr.next();
+                    if (!topicDefinitionMap.containsKey(refTopic)) {
+                        refItr.remove();// remove invalid reference
+                    }
+                }
+                if (refTopics.isEmpty()) {
+                    definition.setReferCalcTopics(null);
+                }
+            }
+        }
+    }
+
+    void addTopicFields(CreateTopicDto dto) {
+        addTopicFields(topicDefinitionMap, dto);
+        addScheduleCalcTask(dto);
+    }
+
+    private void addScheduleCalcTask(CreateTopicDto dto) {
+        if (dto.getDataType() == Constants.REFER_TYPE) {
+            String topic = dto.getTopic();
+            if (scheduleCalcTopics.add(topic)) {
+                tryMergeTopics(topic);
+            }
+        }
+    }
+
+    private void tryMergeTopics(String topic) {
+        TopicDefinition definition = topicDefinitionMap.get(topic);
+        CreateTopicDto dto = definition != null ? definition.getCreateTopicDto() : null;
+        Long freq;
+        if (dto != null && dto.getDataType() == Constants.REFER_TYPE
+                && (freq = dto.getFrequencySeconds()) != null && freq > 0) {
+            systemTimer.addTask(new TimerTask(new Runnable() {
+                @Override
+                public void run() {
+                    mergeReferTopics(dto);
+                    tryMergeTopics(topic);
+                }
+            }, freq * 1000));
+        } else {
+            log.warn("不是合并实例: {}, dto={}", topic, dto);
+        }
+    }
+
+    private void mergeReferTopics(CreateTopicDto dto) {
+        StringBuilder sb = new StringBuilder(256);
+        for (InstanceField field : dto.getRefers()) {
+            String topic = field.getTopic();
+            TopicDefinition definition = topicDefinitionMap.get(topic);
+            Map<String, Object> lastMsg = definition.getLastMsg();
+            if (lastMsg != null) {
+                if (sb.length() > 0) {
+                    sb.append(',');
+                } else {
+                    TopicDefinition mdf = topicDefinitionMap.get(dto.getTopic());
+                    FieldDefines defines = mdf.getFieldDefines();
+                    sb.append("{\"").append(defines.getCalcField().getName()).append("\":\"{");
+                }
+                sb.append("\\\"").append(definition.getTable()).append("\\\":");
+                add2Json(definition.getFieldDefines(), lastMsg, sb);
+            }
+        }
+        final String mergeTopic = dto.getTopic();
+        if (sb.length() == 0) {
+            log.trace("NO合并值：{}", mergeTopic);
+            return;
+        }
+        sb.append("}\"}");
+        final String dataJson = sb.toString();
+        log.debug("发送合并值：{}: {}", mergeTopic, dataJson);
+        try {
+            mqttPublisher.publishMessage(mergeTopic, dataJson.getBytes(StandardCharsets.UTF_8), 1);
+            publishedMergeSize.incrementAndGet();
+        } catch (MqttException e) {
+            log.error("ErrPublishMergeMsg: topic={} , data={}", mergeTopic, dataJson, e);
+        }
+
+    }
+
+    static void add2Json(FieldDefines fieldDefines, Map<String, Object> bean, StringBuilder sb) {
+        sb.append('{');
+        final int len = sb.length();
+        Map<String, FieldDefine> fieldDefineMap = fieldDefines.getFieldsMap();
+        for (Map.Entry<String, Object> entry : bean.entrySet()) {
+            String name = entry.getKey();
+            if (name.startsWith(Constants.SYSTEM_FIELD_PREV)) {
+                continue;
+            }
+            Object v = entry.getValue();
+            FieldDefine fieldDefine = fieldDefineMap.get(name);
+            if (fieldDefine != null && v != null) {
+                sb.append("\\\"").append(name).append("\\\":");
+                FieldType fieldType = fieldDefine.getType();
+                boolean isZ = fieldType == FieldType.INT || fieldType == FieldType.LONG;
+                if (Number.class.isAssignableFrom(v.getClass())) {
+                    sb.append(isZ ? ((Number) v).longValue() : v).append(',');
+                } else {
+                    String s = v.toString().replace("\"", "\\\\\\\"");
+                    s = s.replace("'", "\\u0027");
+                    sb.append("\\\"").append(s).append("\\\",");
+                }
+            }
+        }
+        if (sb.length() > len) {
+            sb.setCharAt(sb.length() - 1, '}');
+        } else {
+            sb.append('}');
+        }
+    }
+
+    static void addTopicFields(Map<String, TopicDefinition> topicDefinitionMap, CreateTopicDto dto) {
+        final String topic = dto.getTopic();
+        TopicDefinition prevDefinition = topicDefinitionMap.get(topic);
+        if (prevDefinition != null) {
+            prevDefinition.setCreateTopicDto(dto);
+        } else {
+            topicDefinitionMap.put(topic, new TopicDefinition(dto));
+        }
+    }
+
+    @Override
+    public void onMessage(String topic, String payload) {
+        onMessage(topic, -1, payload);
+    }
+}

@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Client</title>
+</head>
+<body>
+<h2>WebSocket Messages</h2>
+<ul id="messages"></ul>
+<script>
+// 创建一个WebSocket连接
+const socket = new WebSocket('http://office.unibutton.com:11488/inter-api/supos/uns/ws?topic=/org/zhongkong/company/fx/department/anothersolution');
+
+// 监听连接打开事件
+socket.addEventListener('open', (event) => {
+    console.log('WebSocket is open now.');
+});
+
+// 监听消息事件
+socket.addEventListener('message', (event) => {
+    console.log('Message from server: ', event.data);
+    showMessage(event.data);
+});
+
+// 监听错误事件
+socket.addEventListener('error', (error) => {
+    console.error('WebSocket encountered error: ', error);
+});
+
+// 监听连接关闭事件
+socket.addEventListener('close', (event) => {
+    console.log('WebSocket is closed now.');
+});
+
+function showMessage(message) {
+        const messages = document.getElementById("messages");
+        const listItem = document.createElement("li");
+        listItem.innerText = message;
+        messages.appendChild(listItem);
+}
+</script>
+
+</body>
+</html>

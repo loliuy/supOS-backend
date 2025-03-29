@@ -1,0 +1,58 @@
+{
+  "acr": "0",
+  "allowed-origins": [
+    "*"
+  ],
+  "aud": [
+    "realm-management",
+    "broker",
+    "account"
+  ],
+  "auth_time": 1731894551,
+  "azp": "supos",
+  "email": "xwj123789@163.com",
+  "email_verified": false,
+  "exp": 1731930551,
+  "given_name": "Xin",
+  "iat": 1731918488,
+  "iss": "http://office.unibutton.com:11488/keycloak/home/auth/realms/supos",
+  "jti": "63ebe3bc-3798-430a-b633-9cf2321b0461",
+  "name": "Xin",
+  "preferred_username": "xinwangji",
+  "realm_access": {
+    "roles": [
+      "offline_access",
+      "uma_authorization",
+      "default-roles-supos"
+    ]
+  },
+  "resource_access": {
+    "account": {
+      "roles": [
+        "manage-account",
+        "view-applications",
+        "view-consent",
+        "view-groups",
+        "manage-account-links",
+        "manage-consent",
+        "delete-account",
+        "view-profile"
+      ]
+    },
+    "broker": {
+      "roles": [
+        "read-token"
+      ]
+    },
+    "realm-management": {
+      "roles": [
+        "impersonation",
+        "create-client"
+      ]
+    }
+  },
+  "scope": "openid email profile",
+  "sid": "4295126f-698e-4c75-a694-130e8adce62e",
+  "sub": "a4f5cc2d-4cfc-4f6d-b5e3-25f566882221",
+  "typ": "Bearer"
+}
