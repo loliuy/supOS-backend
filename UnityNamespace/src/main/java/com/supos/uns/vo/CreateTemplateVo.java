@@ -1,6 +1,7 @@
 package com.supos.uns.vo;
 
 import com.supos.common.vo.FieldDefineVo;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -21,15 +22,18 @@ public class CreateTemplateVo {
      * 模板名称
      */
     @NotEmpty(message = "The template name cannot be empty")
+    @Schema(description = "模板名称")
     String path;
     /**
      * 字段定义
      */
     @NotNull(message = "The fields cannot be null")
+    @Schema(description = "字段定义")
     FieldDefineVo[] fields;
     /**
-     * 模型描述
+     * 模板描述
      */
+    @Schema(description = "模板描述")
     String description;
 
     public String gainBatchIndex() {

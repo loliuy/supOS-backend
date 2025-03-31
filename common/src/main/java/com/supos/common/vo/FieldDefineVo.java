@@ -5,6 +5,7 @@ import com.supos.common.Constants;
 import com.supos.common.annotation.FieldTypeValidator;
 import com.supos.common.dto.FieldDefine;
 import com.supos.common.enums.FieldType;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 
 import jakarta.validation.constraints.NotEmpty;
@@ -14,14 +15,21 @@ import java.util.Objects;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class FieldDefineVo {
     @NotEmpty
+    @Schema(description = "字段名")
     private String name;//字段名
     @NotEmpty
     @FieldTypeValidator
+    @Schema(description = "字段类型：int, long, float, string, boolean")
     private String type;// 字段类型：int, long, float, string, boolean
+    @Schema(description = "是否唯一约束")
     private Boolean unique;// 是否唯一约束
+    @Schema(description = "modeBus 协议时字段对应的数组下标")
     private String index; // modeBus 协议时字段对应的数组下标
+    @Schema(description = "是否系统预置字段")
     private Boolean system; // 是否系统预置字段
+    @Schema(description = "显式名")
     private String displayName;//显式名
+    @Schema(description = "备注")
     private String remark;//备注
 
     public FieldDefineVo() {

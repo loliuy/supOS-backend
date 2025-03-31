@@ -57,7 +57,7 @@ public class UnsApiController {
     @GetMapping(path = {"/inter-api/supos/uns/tree", "/open-api/supos/uns/tree"})
     public JsonResult<List<TopicTreeResult>> searchTree(@RequestParam(name = "key", required = false) @Parameter(description = "子节点模糊搜索词") String keyword,
                                                         @RequestParam(name = "showRec", required = false, defaultValue = "false") @Parameter(description = "显示记录条数") boolean showRec,
-                                                        @RequestParam(name = "type", required = false, defaultValue = "1") @Parameter(description = "搜索类型: 1--文本搜索, 2--标签搜索") int searchType
+                                                        @RequestParam(name = "type", required = false, defaultValue = "1") @Parameter(description = "搜索类型: 1--文本搜索, 2--标签搜索，3--模板搜索") int searchType
     ) throws Exception {
         if (1 == searchType) {
             return unsQueryService.searchTree(keyword, showRec);

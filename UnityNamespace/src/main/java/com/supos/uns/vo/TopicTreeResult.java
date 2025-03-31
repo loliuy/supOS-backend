@@ -3,6 +3,7 @@ package com.supos.uns.vo;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.supos.common.vo.FieldDefineVo;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 import org.apache.commons.lang3.StringUtils;
@@ -14,15 +15,23 @@ import java.util.TreeSet;
 @NoArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class TopicTreeResult {
+    @Schema(description = "节点值，本期表示消费下来的数据条数")
     Long value; //节点值，本期表示消费下来的数据条数
+    @Schema(description = "最新更新时间")
     Long lastUpdateTime;
+    @Schema(description = "子节点数")
     Integer countChildren;
+    @Schema(description = "节点类型: 0--纯路径，1--模型, 2--实例")
     int type; // 节点类型: 0--纯路径，1--模型, 2--实例
+    @Schema(description = "显示名称")
     String name;//显示名称
+    @Schema(description = "树的路径")
     String path;//树的路径
+    @Schema(description = "协议类型")
     String protocol; // 协议类型
-
+    @Schema(description = "字段定义")
     FieldDefineVo[] fields;// 字段定义
+    @Schema(description = "子节点")
     Collection<TopicTreeResult> children;// 子节点
 
     public TopicTreeResult(String name, String path) {

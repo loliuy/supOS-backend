@@ -1,6 +1,7 @@
 package com.supos.uns.dao.po;
 
 import com.baomidou.mybatisplus.annotation.*;
+import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -16,8 +17,10 @@ public class UnsLabelPo {
     public static final String TABLE_NAME = "uns_label";
 
     @TableId(type = IdType.AUTO)
+    @Schema(description = "标签ID")
     private Long id;
 
+    @Schema(description = "标签名称")
     private String labelName;
 
     private Date createAt;

@@ -1,17 +1,21 @@
 package com.supos.uns.config;
 
-import cn.hutool.core.thread.ThreadUtil;
 import cn.hutool.http.HttpUtil;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.StringUtils;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.event.ContextRefreshedEvent;
+import org.springframework.context.event.EventListener;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Configuration
@@ -21,7 +25,7 @@ public class Chat2dbConfig {
     @Autowired
     private SqlSessionTemplate sqlSessionTemplate;
 
-    @PostConstruct
+    @EventListener(classes = ContextRefreshedEvent.class)
     void initDataSource() {
         final String CHAT2DB_USER = "chat2db_query";
         final String CHAT2DB_PSW = "12321";
@@ -76,51 +80,79 @@ public class Chat2dbConfig {
             chat2dbHost = chat2dbHost.substring(0, chat2dbHost.length() - 1);
         }
         final String HOST = chat2dbHost;
-        ThreadUtil.execAsync(() -> {
-            try {
-                DataSource dataSource = sqlSessionTemplate.getConfiguration().getEnvironment().getDataSource();
-                JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
-                jdbcTemplate.batchUpdate(createReadOnlyUserSqls);
-                log.info("创建 CHAT2DB_USER 成功!");
-            } catch (Exception ex) {
-                Throwable cause = ex, pre = ex;
-                while (pre != null) {
-                    cause = pre;
-                    pre = pre.getCause();
-                }
-                String msg = cause.getMessage();
-                if (msg != null && msg.toLowerCase().contains("exists")) {
-                    if (msg.startsWith("ERROR:")) {
-                        msg = msg.substring(6);
-                    }
-                    log.info("已经创建 CHAT2DB_USER： {}", msg);
-                } else {
-                    log.error("创建 CHAT2DB_USER", ex);
-                }
-            }
-            HttpUtil.createPost(HOST + "/api/oauth/login_a").timeout(3000)
-                    .body("{\"userName\":\"chat2db\",\"password\":\"chat2db\"}").then(resp -> {
-                        String setCookie = resp.header("Set-Cookie");
-                        log.info("CHAT2DB 登录结果[{}]：{}", resp.getStatus(), resp.headers());
-                        if (setCookie != null) {
-                            HttpUtil.createGet(HOST + "/api/connection/datasource/list?searchKey=" + CHAT2DB_PG_ALIAS +
-                                            "&pageSize=5").timeout(5000).header("Cookie", setCookie)
-                                    .then(queryRs -> {
-                                        String body = queryRs.body();
-                                        log.debug("CHAT2DB 数据源查询结果：{}", body);
-                                        if (body == null || !body.contains("postgresql://")) {
-                                            HttpUtil.createPost(HOST + "/api/connection/datasource/create").timeout(5000).header("Cookie", setCookie)
-                                                    .body(defaultDataSource).then(rs -> {
-                                                        log.info("CHAT2DB 创建数据源结果[{}]：{}", rs.getStatus(), rs.body());
-                                                    });
-                                        }
-                                    });
+        ScheduledExecutorService executorService = Executors.newSingleThreadScheduledExecutor();
+        executorService.submit(() -> {
+            final AtomicBoolean addUserOk = new AtomicBoolean(addPgReadOnlyUser(createReadOnlyUserSqls));
+            executorService.submit(new Runnable() {
+                long i = 1;
 
-                        } else {
-                            log.warn("CHAT2DB 登录失败!");
+                @Override
+                public void run() {
+                    try {
+                        if (!addUserOk.get()) {
+                            addUserOk.set(addPgReadOnlyUser(createReadOnlyUserSqls));
                         }
-                    });
-        }, false);
+                        addDefaultDataSourceToChat2db(HOST, CHAT2DB_PG_ALIAS, defaultDataSource);
+                        log.info("chat2db 添加数据源. {}", HOST);
+                        executorService.shutdown();
+                    } catch (Exception ex) {
+                        log.error("chat2db 添加数据源失败{}", HOST);
+                        executorService.schedule(this, (i++) << 2, TimeUnit.SECONDS);
+                    }
+                }
+            });
+        });
+    }
 
+    private boolean addPgReadOnlyUser(String[] createReadOnlyUserSqls) {
+        try {
+            DataSource dataSource = sqlSessionTemplate.getConfiguration().getEnvironment().getDataSource();
+            JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+            jdbcTemplate.batchUpdate(createReadOnlyUserSqls);
+            log.info("创建 CHAT2DB_USER 成功!");
+            return true;
+        } catch (Exception ex) {
+            Throwable cause = ex, pre = ex;
+            while (pre != null) {
+                cause = pre;
+                pre = pre.getCause();
+            }
+            String msg = cause.getMessage();
+            if (msg != null && msg.toLowerCase().contains("exists")) {
+                if (msg.startsWith("ERROR:")) {
+                    msg = msg.substring(6);
+                }
+                log.info("已经创建 CHAT2DB_USER： {}", msg);
+                return true;
+            } else {
+                log.error("创建 CHAT2DB_USER", ex);
+            }
+        }
+        return false;
+    }
+
+    private static void addDefaultDataSourceToChat2db(String HOST, String CHAT2DB_PG_ALIAS, String defaultDataSource) {
+        HttpUtil.createPost(HOST + "/api/oauth/login_a").timeout(3000)
+                .body("{\"userName\":\"chat2db\",\"password\":\"chat2db\"}").then(resp -> {
+                    String setCookie = resp.header("Set-Cookie");
+                    log.info("CHAT2DB 登录结果[{}]：{}", resp.getStatus(), resp.headers());
+                    if (setCookie != null) {
+                        HttpUtil.createGet(HOST + "/api/connection/datasource/list?searchKey=" + CHAT2DB_PG_ALIAS +
+                                        "&pageSize=5").timeout(5000).header("Cookie", setCookie)
+                                .then(queryRs -> {
+                                    String body = queryRs.body();
+                                    log.debug("CHAT2DB 数据源查询结果：{}", body);
+                                    if (body == null || !body.contains("postgresql://")) {
+                                        HttpUtil.createPost(HOST + "/api/connection/datasource/create").timeout(5000).header("Cookie", setCookie)
+                                                .body(defaultDataSource).then(rs -> {
+                                                    log.info("CHAT2DB 创建数据源结果[{}]：{}", rs.getStatus(), rs.body());
+                                                });
+                                    }
+                                });
+
+                    } else {
+                        log.warn("CHAT2DB 登录失败!");
+                    }
+                });
     }
 }

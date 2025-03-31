@@ -5,7 +5,8 @@ RUN mvn clean package -DskipTests
 
 RUN ls -l /app/bootstrap/target/
 
-FROM openjdk:17
+FROM openjdk:17-jdk
+CMD ["bash"]
 COPY  --from=builder /app/bootstrap/target/bootstrap*.jar /app.jar
 RUN pwd
 RUN ls -l /app.jar

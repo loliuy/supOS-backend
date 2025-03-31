@@ -8,6 +8,7 @@ import cn.hutool.core.util.ZipUtil;
 import cn.hutool.extra.spring.SpringUtil;
 import cn.hutool.http.HttpRequest;
 import cn.hutool.http.HttpResponse;
+import cn.hutool.http.HttpUtil;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
@@ -235,7 +236,10 @@ public class ExampleService extends ServiceImpl<ExampleMapper, ExamplePo> {
         params.put("isClear",true);
         HttpResponse httpResponse = null;
         try {
-            httpResponse = HttpRequest.post(url).body(params.toJSONString()).execute();
+            httpResponse = HttpRequest.post(url).body(params.toJSONString())
+                    .setConnectionTimeout(30000)
+                    .setReadTimeout(30000)
+                    .execute();
         } catch (Exception e) {
             log.error("createFuxaProject Exception",e);
             return false;
