@@ -76,15 +76,11 @@ public final class FileUtils {
     }
 
     /**
-     * 判断系统环境返回上传路径
+     * 返回挂载目录
      * @return 路径
      */
     public static String getFileRootPath() {
-        if (SystemUtil.getOsInfo().isLinux()) {
-            return Constants.ROOT_PATH;
-        } else {
-            return WINDOWS_FILE_PATH;
-        }
+        return Constants.ROOT_PATH;
     }
 
     /**
