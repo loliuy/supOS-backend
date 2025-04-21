@@ -61,10 +61,10 @@ public class ImportNodeFlowController {
         for (Map.Entry<SrcJdbcType, CreateTopicDto[]> entry : event.topics.entrySet()) {
             for (CreateTopicDto topic : entry.getValue()) {
                 Integer flags = topic.getFlags();
-                if (flags == null || !Constants.withFlow(flags)) {
+                /*if (flags == null || !Constants.withFlow(flags)) {
                     log.info("{} skip create flows, because addFlow is false", topic.getTopic());
                     continue;
-                }
+                }*/
                 if (!firstTopicNameMap.containsKey(entry.getKey())) {
                     firstTopicNameMap.put(entry.getKey(), topic.getTopic());
                 }
@@ -74,12 +74,11 @@ public class ImportNodeFlowController {
                 Object proto = protocolMap != null ? protocolMap.get("protocol") : null;
                 String protocol = proto != null ? proto.toString() : null;
                 if (protocol == null || "relation".equals(protocol)) {
-                    String mockJsonData = genMockData(topic.getFields());
                     uns.setProtocol(IOTProtocol.RELATION.getName());
-                    uns.setJsonExample(mockJsonData);
+                    uns.setJsonExample(genMockData(topic.getFields()));
+                    uns.setMockData(Constants.withFlow(flags));
                     unsList.add(uns);
                 } else {
-
                     uns.setConfig(protocolMap);
                     uns.setFields(filterSystemField(topic.getFields()));
                     uns.setProtocol(protocol);
