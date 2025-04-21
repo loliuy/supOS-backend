@@ -42,6 +42,7 @@ public class RelationalParser extends ParserApi {
         jsonFlowStr = jsonFlowStr.replace("$model_topic", uns.getUnsTopic());
         // 替换mock数据
         jsonFlowStr = jsonFlowStr.replace("$payload", uns.getJsonExample());
+        jsonFlowStr = jsonFlowStr.replace("$disabled", uns.isMockData() ? "false" : "true");
 
         JSONArray jsonArr = JSON.parseArray(jsonFlowStr);
         // 设置节点高度
