@@ -4,21 +4,17 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.fastjson.parser.Feature;
-import com.supos.adpter.nodered.enums.DataType;
 import com.supos.adpter.nodered.util.IDGenerator;
 import com.supos.adpter.nodered.vo.BatchImportRequestVO;
 import com.supos.common.dto.FieldDefine;
 import com.supos.common.dto.protocol.MqttConfigDTO;
-import com.supos.common.enums.FieldType;
 import com.supos.common.enums.IOTProtocol;
-import org.abego.treelayout.internal.util.java.lang.string.StringUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * 解析时序模型对应的node-red模版文件
@@ -46,18 +42,6 @@ public class MqttParser extends ParserApi {
         // 只会存在一个mqtt out节点
         JSONObject mqttOutNode = getMqttOut(fullNodes);
         int maxHeight = super.getMaxHeight(fullNodes);
-        // 查找server对应的mqtt in节点
-        JSONObject mqttInNode = getMqttInByServerId(fullNodes, serverId);
-        if (mqttInNode != null) {
-            JSONObject supModelNode = handleDynamicNode(uns, mqttOutNode.getString("id"), maxHeight);
-            // mqtt in追加输出
-            JSONArray wires = mqttInNode.getJSONArray("wires");
-            JSONArray wire0 = wires.getJSONArray(0);
-            String supModeId = supModelNode.getString("id");
-            wire0.add(supModeId);
-            fullNodes.add(supModelNode);
-            return;
-        }
 
         JSONObject defaultMqttBrokerNode = getMqttBrokerNode(fullNodes,"", "emqx", "1883");
         if (defaultMqttBrokerNode != null && !serverId.equals(defaultMqttBrokerNode.getString("id"))) {
