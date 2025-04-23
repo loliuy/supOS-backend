@@ -19,9 +19,11 @@ import java.io.InputStreamReader;
 
 /**
  * init default flow
+ * 移动到node-red服务，通过挂载的方式实现流程初始化
  */
-@Component
+//@Component
 @Slf4j
+@Deprecated
 public class NodeRedInitCommandRunner implements CommandLineRunner {
 
     @Autowired
