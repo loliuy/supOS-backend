@@ -1033,6 +1033,7 @@ public class UnsManagerService extends ServiceImpl<UnsMapper, UnsPo> {
                 modelPo.setWithFlags(m.getWithFlags());
                 modelPo.setAlias(m.getAlias());
                 list.add(modelPo);
+                folderTemp.put(id, modelPo);
 
                 // 上级文件夹处理
                 int x = m.getPath().lastIndexOf('/', m.getPath().lastIndexOf('/') - 1);
