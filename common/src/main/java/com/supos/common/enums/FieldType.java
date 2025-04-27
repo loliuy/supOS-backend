@@ -1,5 +1,6 @@
 package com.supos.common.enums;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
 import lombok.Getter;
 
 import java.util.HashMap;
@@ -40,6 +41,11 @@ public enum FieldType {
 
     public static FieldType getByName(String name) {
         return nameMap.get(name);
+    }
+
+    @JsonCreator
+    public static FieldType getByNameIgnoreCase(String name) {
+        return getByName(name.toLowerCase());
     }
 
     public String toString() {

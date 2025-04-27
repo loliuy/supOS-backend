@@ -141,6 +141,13 @@ public class UnsApiController {
         return unsQueryService.parseJson2TreeUns(json);
     }
 
+    @Operation(summary = "批量创建文件夹和文件(node-red导入专用)", tags = "openapi.tag.folder.management")
+    @PostMapping(path = {"/inter-api/supos/uns/for/nodered"})
+    public ResultVO createModelsForNodeRed(@RequestBody List<CreateUnsNodeRedDto> requestDto) throws Exception {
+        List<String[]> results = unsManagerService.createModelsForNodeRed(requestDto);
+        return ResultVO.successWithData(results);
+    }
+
     @Operation(summary = "创建文件夹和文件",tags = "openapi.tag.folder.management")
     @PostMapping(path = {"/inter-api/supos/uns/model", "/open-api/supos/uns/model"})
     @Valid

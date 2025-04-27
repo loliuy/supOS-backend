@@ -120,6 +120,95 @@ public class UnsManagerService extends ServiceImpl<UnsMapper, UnsPo> {
         return createModelAndInstancesInner(args);
     }
 
+    @Transactional(rollbackFor = Throwable.class, timeout = 300)
+    public List<String[]> createModelsForNodeRed(List<CreateUnsNodeRedDto> requestDto) {
+        List<CreateTopicDto> createTopicDtos = modelTransfer(requestDto);
+        Map<String, String> errorMap = createModelAndInstance(createTopicDtos);
+        List<String[]> results = new ArrayList<>();
+//        if (!errorMap.isEmpty()) {
+//            return results;
+//        }
+        for (CreateUnsNodeRedDto dto : requestDto) {
+            String fullpath = dto.getPath().concat("/").concat(dto.getName());
+            if (!StringUtils.hasText(dto.getPath()) || dto.getPath().endsWith("/")) {
+                fullpath = dto.getPath().concat(dto.getName());
+            }
+            String alias = dto.getAlias();
+            if (!StringUtils.hasText(alias)) {
+                alias = PathUtil.generateFileAlias(fullpath);
+            }
+            // topic, name, alias, fname, ftype, tag
+            String[] row = {dto.getPath(), dto.getName(), alias, dto.getFieldName(), dto.getFieldType(), dto.getTag()};
+            results.add(row);
+        }
+        return results;
+    }
+
+    private List<CreateTopicDto> modelTransfer(List<CreateUnsNodeRedDto> requestDtoList) {
+        List<CreateTopicDto> dtos = new ArrayList<>();
+        Map<String, String> aliasMap = new HashMap<>();
+        Map<String, List<FieldDefine>> fileMap = new HashMap<>();
+        // 根据路径，对文件属性进行归类
+        for (CreateUnsNodeRedDto requestDto : requestDtoList) {
+            String fullpath = requestDto.getPath().concat("/").concat(requestDto.getName());
+            if (!StringUtils.hasText(requestDto.getPath()) || requestDto.getPath().endsWith("/")) {
+                fullpath = requestDto.getPath().concat(requestDto.getName());
+            }
+            FieldDefine fd = new FieldDefine();
+            fd.setType(FieldType.getByNameIgnoreCase(requestDto.getFieldType()));
+            fd.setName(requestDto.getFieldName());
+            List<FieldDefine> fieldDefines = fileMap.getOrDefault(fullpath, new ArrayList<>());
+            // 如果传了alias，那么就以参数为准
+            if (StringUtils.hasText(requestDto.getAlias())) {
+                aliasMap.put(fullpath, requestDto.getAlias());
+            }
+            fieldDefines.add(fd);
+            fileMap.put(fullpath, fieldDefines);
+        }
+        // 构建path和alias的关系
+        for (String path : fileMap.keySet()) {
+            String[] folders = path.split("/");
+            for (int i = 0; i < folders.length; i++) {
+                String tmp = folders[i];
+                int ii = i;
+                while (--ii >= 0 ) {
+                    tmp = folders[ii] + "/" + tmp;
+                }
+                // 给文件夹路径最后加一个/
+                if (i < (folders.length - 1)) {
+                    tmp += "/";
+                }
+                if (!aliasMap.containsKey(tmp)) {
+                    String falias = PathUtil.generateFileAlias(tmp);
+                    aliasMap.put(tmp, falias);
+                }
+            }
+        }
+
+        for (Map.Entry<String, String> entry : aliasMap.entrySet()) {
+            CreateTopicDto dto = new CreateTopicDto();
+            dto.setAlias(entry.getValue());
+            dto.setTopic(entry.getKey());
+            // node-red上来的都是时序类型
+            dto.setDataType(1);
+            List<FieldDefine> fields = fileMap.get(entry.getKey());
+            if (fields != null && !fields.isEmpty()) {
+                dto.setFields(list2Array(fields));
+            }
+            dto.setAddFlow(false);
+            dtos.add(dto);
+        }
+        return dtos;
+    }
+
+    private FieldDefine[] list2Array(List<FieldDefine> fieldList) {
+        FieldDefine[] fs = new FieldDefine[fieldList.size()];
+        for (int i = 0; i < fieldList.size(); i++) {
+            fs[i] = fieldList.get(i);
+        }
+        return fs;
+    }
+
     /**
      * 创建模型和实例 -- 前端界面创建单个实例发起
      *
