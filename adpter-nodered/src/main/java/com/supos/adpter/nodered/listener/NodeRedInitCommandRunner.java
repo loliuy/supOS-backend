@@ -21,9 +21,8 @@ import java.io.InputStreamReader;
  * init default flow
  * 移动到node-red服务，通过挂载的方式实现流程初始化
  */
-//@Component
+@Component
 @Slf4j
-@Deprecated
 public class NodeRedInitCommandRunner implements CommandLineRunner {
 
     @Autowired
@@ -33,12 +32,13 @@ public class NodeRedInitCommandRunner implements CommandLineRunner {
 
     @Override
     public void run(String... args) throws Exception {
-        initFlow("/flows-simulator.json", "Data Simulator", "The initialization process is for Simulator");
+        initFlow("/demo-it.json", "demo-it", "demo for it flow");
+        initFlow("/demo-ot.json", "demo-ot", "demo for ot flow");
     }
 
-    private void initFlow(String flowFile, String name, String desc) throws Exception{
+    private void initFlow(String flowFile, String name, String desc) throws Exception {
         NodeFlowPO standardFlow = nodeFlowMapper.getByName(name);
-        int retry = 3; // 失败重试
+        int retry = 5; // 失败重试
         while (retry > 0) {
             retry -= 1;
             try {
@@ -52,8 +52,8 @@ public class NodeRedInitCommandRunner implements CommandLineRunner {
                 }
                 return;
             } catch (Exception e) {
-                log.error("failed: {}, sleep 10s and try again", e.getMessage());
-                Thread.sleep(10_000); // sleep 10s
+                log.error("failed: {}, sleep 20s and try again", e.getMessage());
+                Thread.sleep(20_000); // sleep 20s
             }
         }
         log.error("<== finally, flow init failed");

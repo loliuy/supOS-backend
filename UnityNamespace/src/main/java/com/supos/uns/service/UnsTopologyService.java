@@ -191,7 +191,6 @@ public class UnsTopologyService {
      */
     @EventListener(classes = TopicMessageEvent.class)
     public void icmpRealDataChange(TopicMessageEvent event) {
-        log.info("======= topic = {}, protocol = {} ===========", event.topic, event.protocol);
         if (!IOTProtocol.ICMP.name().equalsIgnoreCase(event.protocol)) {
             return;
         }
@@ -200,7 +199,6 @@ public class UnsTopologyService {
         Set<ICMPStateVO> icmpStates = globalTopologyData.getIcmpStates();
         Object status = data.get("status"); // icmp类型都有固定status属性
         ICMPStateVO realState = new ICMPStateVO(event.topic, Integer.valueOf(status.toString()));
-        log.info("======== icmp in {} ========", realState);
         boolean isChanged = false;
         if (icmpStates.contains(realState)) {
             for (ICMPStateVO state : icmpStates) {
