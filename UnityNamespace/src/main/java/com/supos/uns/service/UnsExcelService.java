@@ -608,41 +608,11 @@ public class UnsExcelService {
                     UnsPo unsPo = file.getUnsPo();
                     com.supos.uns.util.ExcelUtil.RowWrapper rowWrapper = com.supos.uns.util.ExcelUtil.createRow(unsPo, templateMap, unsLabelNamesMap);
                     file.setRowWrapper(rowWrapper);
-                    IOTProtocol protocol = rowWrapper.getProtocol();
 
-                    if (protocol == null || protocol == IOTProtocol.UNKNOWN) {
-                        // 空实例
-                        if (unsPo.getDataType() == Constants.TIME_SEQUENCE_TYPE) {
-                            writeFolderAndFile(excelWriter, ExcelTypeEnum.TIMESERIES, file, excelTypeItemMap, sheetRowMap, templateMap, unsLabelNamesMap);
-                        } else if (unsPo.getDataType() == Constants.RELATION_TYPE) {
-                            writeFolderAndFile(excelWriter, ExcelTypeEnum.RELATION, file, excelTypeItemMap, sheetRowMap, templateMap, unsLabelNamesMap);
-                        }
-                    } else {
-                        // 有协议的实例
-                        switch (protocol) {
-                            case MODBUS:
-                                writeFolderAndFile(excelWriter, ExcelTypeEnum.TIMESERIES_MODBUS, file, excelTypeItemMap, sheetRowMap, templateMap, unsLabelNamesMap);
-                                break;
-                            case OPC_UA:
-                                writeFolderAndFile(excelWriter, ExcelTypeEnum.TIMESERIES_OPCUA, file, excelTypeItemMap, sheetRowMap, templateMap, unsLabelNamesMap);
-                                break;
-                            case OPC_DA:
-                                writeFolderAndFile(excelWriter, ExcelTypeEnum.TIMESERIES_OPCDA, file, excelTypeItemMap, sheetRowMap, templateMap, unsLabelNamesMap);
-                                break;
-                            case RELATION:
-                                writeFolderAndFile(excelWriter, ExcelTypeEnum.RELATION, file, excelTypeItemMap, sheetRowMap, templateMap, unsLabelNamesMap);
-                                break;
-                            case REST:
-                                writeFolderAndFile(excelWriter, ExcelTypeEnum.RELATION_RESTAPI, file, excelTypeItemMap, sheetRowMap, templateMap, unsLabelNamesMap);
-                                break;
-                            case MQTT:
-                                if (unsPo.getDataType() == Constants.TIME_SEQUENCE_TYPE) {
-                                    writeFolderAndFile(excelWriter, ExcelTypeEnum.TIMESERIES_MQTT, file, excelTypeItemMap, sheetRowMap, templateMap, unsLabelNamesMap);
-                                } else if (unsPo.getDataType() == Constants.RELATION_TYPE) {
-                                    writeFolderAndFile(excelWriter, ExcelTypeEnum.RELATION_MQTT, file, excelTypeItemMap, sheetRowMap, templateMap, unsLabelNamesMap);
-                                }
-                                break;
-                        }
+                    if (unsPo.getDataType() == Constants.TIME_SEQUENCE_TYPE) {
+                        writeFolderAndFile(excelWriter, ExcelTypeEnum.TIMESERIES, file, excelTypeItemMap, sheetRowMap, templateMap, unsLabelNamesMap);
+                    } else if (unsPo.getDataType() == Constants.RELATION_TYPE) {
+                        writeFolderAndFile(excelWriter, ExcelTypeEnum.RELATION, file, excelTypeItemMap, sheetRowMap, templateMap, unsLabelNamesMap);
                     }
                 }
 
@@ -910,13 +880,13 @@ public class UnsExcelService {
                     continue;
                 }
 
-                Boolean autoFlow = getBoolean(dataMap, "autoFlow", false);
+                Boolean autoFlow = getBoolean(dataMap, "mockData", false);
                 if (autoFlow == null) {
-                    excelCheckErrorMap.put(batchIndex, I18nUtils.getMessage("uns.excel.autoFlow.invalid"));
+                    excelCheckErrorMap.put(batchIndex, I18nUtils.getMessage("uns.excel.mockData.invalid"));
                     continue;
                 }
                 createTopicDto.setAddFlow(autoFlow);
-                dataMap.remove("autoFlow");
+                dataMap.remove("mockData");
 
                 Boolean autoDashboard = getBoolean(dataMap, "autoDashboard", false);
                 if (autoDashboard == null) {
