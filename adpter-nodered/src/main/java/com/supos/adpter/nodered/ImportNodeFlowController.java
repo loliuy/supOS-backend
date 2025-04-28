@@ -78,31 +78,24 @@ public class ImportNodeFlowController {
                     uns.setJsonExample(genMockData(topic.getFields()));
                     uns.setMockData(Constants.withFlow(flags));
                     unsList.add(uns);
-                } else {
-                    uns.setConfig(protocolMap);
-                    uns.setFields(filterSystemField(topic.getFields()));
-                    uns.setProtocol(protocol);
-                    String jsonString = JSON.toJSONString(topic);
-                    // 替换"为 \"
-                    jsonString = jsonString.replace("\"", "\\\"");
-                    uns.setUnsJsonString(jsonString);
-                    unsList.add(uns);
                 }
             }
         }
 
-        if (!unsList.isEmpty()) {
-            if (event.fromImport) {
-                request.setName(event.flowName);
-            } else {
-                for (String name : firstTopicNameMap.values()) {
-                    firstTopicName.append(name).append(";");
-                }
-                request.setName(firstTopicName.substring(0, firstTopicName.length() - 1));
-            }
-            request.setUns(unsList);
-            importNodeRedFlowService.importFlowFromUns(request);
+        if (unsList.isEmpty()) {
+            log.info("导入数据为空，跳过创建流程");
+            return;
         }
+        if (event.fromImport) {
+            request.setName(event.flowName);
+        } else {
+            for (String name : firstTopicNameMap.values()) {
+                firstTopicName.append(name).append(";");
+            }
+            request.setName(firstTopicName.substring(0, firstTopicName.length() - 1));
+        }
+        request.setUns(unsList);
+        importNodeRedFlowService.importFlowFromUns(request);
         log.info("<=== 批量导入成功 {}", unsList.size());
     }
 
