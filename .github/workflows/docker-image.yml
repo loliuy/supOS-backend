@@ -37,11 +37,11 @@ jobs:
           docker tag suposce/supos-ce-backend:latest suposce/supos-ce-backend:${TIMESTAMP}
           docker push suposce/supos-ce-backend:${TIMESTAMP}      
 
-          docker tag suposce/supos-ce-backend:latest suposce/supos-ce-backend:latest
-          docker push suposce/supos-ce-backend:latest    
+          docker tag suposce/supos-ce-backend:latest suposce/supos-ce-backend:1.0.5-T9
+          docker push suposce/supos-ce-backend:1.0.5-T9    
 
           docker rmi suposce/supos-ce-backend:${TIMESTAMP}
-          docker rmi suposce/supos-ce-backend:latest       
+          docker rmi suposce/supos-ce-backend:1.0.5-T9       
 
       - name: Clean up
         run: |
