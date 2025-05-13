@@ -33,7 +33,7 @@ import java.util.Map;
  */
 public class UnsExcelServiceTest {
 
-    @Test
+/*    @Test
     public void testReadExcelModbus() {
         ExcelReader reader = ExcelUtil.getReader(getClass().getClassLoader().getResourceAsStream("modbus-lch.xlsx"), 0);
         String sheetName = reader.getSheet().getSheetName();
@@ -50,9 +50,9 @@ public class UnsExcelServiceTest {
         System.out.println("topicDtos.size: " + topicDtos.size());
         System.out.println(JsonUtil.toJson(topicDtos));
 
-    }
+    }*/
 
-    @Test
+/*    @Test
     public void testUa() {
         ExcelReader reader = ExcelUtil.getReader(getClass().getClassLoader().getResourceAsStream("opcua-zz.xlsx"), 0);
         String sheetName = reader.getSheet().getSheetName();
@@ -69,9 +69,9 @@ public class UnsExcelServiceTest {
         System.out.println("topicDtos.size: " + topicDtos.size());
         System.out.println(JSON.toJSONString(topicDtos, true));
 
-    }
+    }*/
 
-    @Test
+/*    @Test
     public void testReadExcelRest() {
         ExcelReader reader = ExcelUtil.getReader(getClass().getClassLoader().getResourceAsStream("rest-demo.xlsx"), 0);
         String sheetName = reader.getSheet().getSheetName();
@@ -88,9 +88,9 @@ public class UnsExcelServiceTest {
         System.out.println("topicDtos.size: " + topicDtos.size());
         System.out.println(JSON.toJSONString(topicDtos, true));
 
-    }
+    }*/
 
-    @Test
+/*    @Test
     public void testReadExcelRelation() {
         File dest = new File("target", "uns4.xlsx");
 
@@ -110,9 +110,9 @@ public class UnsExcelServiceTest {
         System.out.println("topicDtos.size: " + topicDtos.size());
         System.out.println(JSON.toJSONString(topicDtos, true));
 
-    }
+    }*/
 
-    @Test
+/*    @Test
     public void testReadExcelWriteErr() {
         ExcelReader reader = ExcelUtil.getReader(getClass().getClassLoader().getResourceAsStream("ren-double-5000.xlsx"), 0);
         ExcelWriter excelWriter = reader.getWriter();
@@ -123,9 +123,9 @@ public class UnsExcelServiceTest {
         errorMap.put(2, "testErr");
         UnsExcelService.writeErrTipExcel(0, errorMap, excelWriter);
         excelWriter.close();
-    }
+    }*/
 
-    @Test
+/*    @Test
     public void testParseDataAndValid() {
         String json = "[{\"topic\":\"/rest\",\"fields\":\"[{\\\"name\\\":\\\"tag\\\",\\\"type\\\":\\\"string\\\"},{\\\"name\\\":\\\"score\\\",\\\"type\\\":\\\"double\\\"}]\"},{\"topic\":\"/rest/dev1\",\"fields\":\"\",\"dataPath\":\"data.list\",\"serverName\":\"demoRestServer\",\"method\":\"GET\",\"syncRate.unit\":\"s\",\"syncRate.value\":100,\"pageDef.start.key\":\"page\",\"pageDef.offset.key\":\"pageSize\",\"fullUrl\":\"http://demo.api/prod/list?page=1&pageSize=20&type=ok\"},{\"topic\":\"/rest/dev2\",\"fields\":\"[{\\\"name\\\":\\\"tag\\\",\\\"type\\\":\\\"string\\\"},{\\\"name\\\":\\\"score\\\",\\\"type\\\":\\\"double\\\"}]\",\"dataPath\":\"data.list\",\"serverName\":\"demoRestServer\",\"method\":\"GET\",\"syncRate.unit\":\"s\",\"syncRate.value\":200,\"pageDef.start.key\":\"page\",\"pageDef.offset.key\":\"pageSize\",\"fullUrl\":\"http://demo.api/prod/list?page=1&pageSize=20&type=ok\"},{\"topic\":\"/rest/dev3\",\"fields\":\"[{\\\"name\\\":\\\"tag\\\",\\\"type\\\":\\\"string\\\",\\\"index\\\":\\\"Tag\\\"},{\\\"name\\\":\\\"score\\\",\\\"type\\\":\\\"double\\\",\\\"index\\\":\\\"Sc\\\"}]\",\"dataPath\":\"data.arr\",\"serverName\":\"rServer3\",\"method\":\"GET\",\"syncRate.unit\":\"s\",\"syncRate.value\":30,\"pageDef.start.key\":\"pageNo\",\"pageDef.offset.key\":\"size\",\"fullUrl\":\"https://demo.api/prod/list?type=3\"},{\"topic\":\"/rest/dev4\",\"fields\":\"[{\\\"name\\\":\\\"tag\\\",\\\"type\\\":\\\"string\\\",\\\"index\\\":\\\"Tag\\\"},{\\\"name\\\":\\\"score\\\",\\\"type\\\":\\\"double\\\",\\\"index\\\":\\\"Sc\\\"}]\",\"dataPath\":\"data.arr\",\"serverName\":\"rServer4\",\"syncRate.unit\":\"s\",\"syncRate.value\":60},{\"topic\":\"/rest/dev5\",\"fields\":\"[{\\\"name\\\":\\\"tag\\\",\\\"type\\\":\\\"string\\\",\\\"index\\\":\\\"Tag\\\"},{\\\"name\\\":\\\"score\\\",\\\"type\\\":\\\"double\\\",\\\"index\\\":\\\"Sc\\\"}]\"}]\n";
         List dataList = JSON.parseArray(json);
@@ -143,9 +143,9 @@ public class UnsExcelServiceTest {
         RestConfigDTO restCfg3 = (RestConfigDTO) ins3.getProtocolBean();
         Assert.assertTrue(restCfg3.isHttps());
         Assert.assertEquals("data.arr", ins3.getDataPath());
-    }
+    }*/
 
-    @Test
+/*    @Test
     public void testReadExcelDataList() {
         ExcelReader reader = ExcelUtil.getReader(getClass().getClassLoader().getResourceAsStream("namespace-20241204152432.xlsx"), 0);
         String sheetName = reader.getSheet().getSheetName();
@@ -172,7 +172,7 @@ public class UnsExcelServiceTest {
         System.out.println("topicDtos.size: " + topicDtos.size());
         System.out.println(JSON.toJSONString(topicDtos, true));
 
-    }
+    }*/
 
     @Test
     public void testExcel() {

@@ -83,6 +83,21 @@ public class UnsLabelService extends ServiceImpl<UnsLabelMapper, UnsLabelPo> {
         return ResultVO.successWithData(po);
     }
 
+    public void create(Set<String> labels) {
+        if (CollectionUtils.isEmpty(labels)) {
+            return;
+        }
+        List<UnsLabelPo> existLabels = list(Wrappers.lambdaQuery(UnsLabelPo.class).in(UnsLabelPo::getLabelName, labels));
+        if (CollectionUtils.isNotEmpty(existLabels)) {
+            List<String> labelNames = existLabels.stream().map(UnsLabelPo::getLabelName).collect(Collectors.toList());
+            labels.removeAll(labelNames);
+        }
+        if (CollectionUtils.isNotEmpty(labels)) {
+            List<UnsLabelPo> labelPos = labels.stream().map(UnsLabelPo::new).collect(Collectors.toList());
+            saveBatch(labelPos);
+        }
+    }
+
     public ResultVO delete(Long id){
         removeById(id);
         this.baseMapper.deleteRefByLabelId(id);

@@ -1,4 +1,4 @@
-package com.supos.common.dto.excel;
+package com.supos.uns.service.exportimport.core.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.supos.common.annotation.AliasValidator;
@@ -9,10 +9,10 @@ import com.supos.common.utils.JsonUtil;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import org.apache.commons.lang3.StringUtils;
 
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
+import org.apache.commons.lang3.StringUtils;
 
 /**
  * @author sunlifang
@@ -25,8 +25,7 @@ import jakarta.validation.constraints.NotEmpty;
 @NoArgsConstructor
 @AllArgsConstructor
 @JsonInclude(JsonInclude.Include.NON_NULL)
-public class ExcelFolderDto {
-
+public class ExcelNameSpaceDto {
     /**
      * 批次号
      */
@@ -35,39 +34,33 @@ public class ExcelFolderDto {
      * 批次内序号
      */
     int index = -1;
-
     @NotEmpty
-    @TopicNameValidator(message = "uns.folder.format.invalid")
-    String name;//主题
+    @TopicNameValidator
+    String path;//主题
 
     @AliasValidator
     String alias;//别名
 
-    FieldDefine[] fields;// 字段定义
+    String templateAlias;// 模板别名
+
+    String fields;// 字段定义
 
     String description; //描述
 
-
-    String template;// 模板名称
-
-    public void setName(String name) {
-        if (name != null && !name.isEmpty()) {
-            name = name.trim();
-            if (!StringUtils.endsWith(name, "/")) {
-                name += "/";
-            }
+    public void setPath(String path) {
+        if (path != null && !path.isEmpty()) {
+            path = path.trim();
         }
-        this.name = name;
+        this.path = path;
     }
 
     public CreateTopicDto createTopic() {
         CreateTopicDto topicDto = new CreateTopicDto();
         topicDto.setIndex(index);
         topicDto.setBatch(batch);
-        topicDto.setTopic(name);
-        topicDto.setAlias(StringUtils.isNotBlank(alias) ? alias : null);
+        topicDto.setTopic(path);
+        topicDto.setAlias(alias);
         topicDto.setDescription(description);
-        topicDto.setTemplate(template);
         return topicDto;
     }
 

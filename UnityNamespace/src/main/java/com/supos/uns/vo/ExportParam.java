@@ -16,6 +16,7 @@ public class ExportParam {
     public final static String EXPORT_TYPE_ALL = "ALL";
 
     private String exportType;
+    private String fileType;
 
     private List<String> models;
     private List<String> instances;

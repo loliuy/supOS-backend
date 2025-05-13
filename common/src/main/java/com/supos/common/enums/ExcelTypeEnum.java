@@ -1,5 +1,6 @@
 package com.supos.common.enums;
 
+import com.google.common.collect.Lists;
 import com.supos.common.Constants;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -18,22 +19,12 @@ import java.util.stream.Collectors;
 @AllArgsConstructor
 public enum ExcelTypeEnum {
 
-
-    RELATION("relation", Constants.RELATION_TYPE, 2),
-    RELATION_RESTAPI("relation-restAPI", Constants.RELATION_TYPE, 4),
-    RELATION_MQTT("relation-mqtt", Constants.RELATION_TYPE, 5),
-    TIMESERIES("TimeSeries", Constants.TIME_SEQUENCE_TYPE, 3),
-    TIMESERIES_MODBUS("TimeSeries-modbus", Constants.TIME_SEQUENCE_TYPE, 6),
-    TIMESERIES_OPCUA("TimeSeries-opcua", Constants.TIME_SEQUENCE_TYPE, 7),
-    TIMESERIES_MQTT("TimeSeries-mqtt", Constants.TIME_SEQUENCE_TYPE, 8),
-    TIMESERIES_OPCDA("TimeSeries-opcda", Constants.TIME_SEQUENCE_TYPE, 9),
-
-    CalcSTREAM("calc_stream", Constants.CALCULATION_HIST_TYPE, -1),
-    CalcRealTime("calc_realtime", Constants.CALCULATION_REAL_TYPE, -1),
-
     Template("Template", null, 0),
-    Folder("Folder", null, 1),
-    Label("Label", null, -1),
+    Label("Label", null, 1),
+    Folder("Folder", null, 2),
+    FILE_TIMESERIES("File-timeseries", Constants.TIME_SEQUENCE_TYPE, 3),
+    FILE_RELATION("File-relation", Constants.RELATION_TYPE, 4),
+
     ERROR("error", 0, -1);
 
     private final String code;
@@ -56,6 +47,23 @@ public enum ExcelTypeEnum {
 
     public static List<ExcelTypeEnum> sort() {
         return Arrays.stream(ExcelTypeEnum.values()).sorted(Comparator.comparing(ExcelTypeEnum::getIndex)).collect(Collectors.toList());
+    }
+
+    public static ExcelTypeEnum valueOfIndex(int index) {
+        for (ExcelTypeEnum obj : ExcelTypeEnum.values()) {
+            if (obj.index == index) {
+                return obj;
+            }
+        }
+        return ERROR;
+    }
+
+    public static int size() {
+        return ExcelTypeEnum.values().length -1;
+    }
+
+    public static List<ExcelTypeEnum> listFile() {
+        return Lists.newArrayList(ExcelTypeEnum.FILE_TIMESERIES, ExcelTypeEnum.FILE_RELATION/*, ExcelTypeEnum.FILE_CALCULATE, ExcelTypeEnum.FILE_AGGREGATION, ExcelTypeEnum.FILE_REFERENCE*/);
     }
 
     public static void main(String[] args) {

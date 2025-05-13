@@ -1,4 +1,4 @@
-package com.supos.common.dto.excel;
+package com.supos.uns.service.exportimport.core.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.supos.common.dto.FieldDefine;
@@ -34,7 +34,9 @@ public class ExcelTemplateDto {
     @NotEmpty
     String name;//主题
 
-    FieldDefine[] fields;// 字段定义
+    String alias;//别名
+
+    String fields;// 字段定义
 
     String description; //描述
 
