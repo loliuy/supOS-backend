@@ -1,0 +1,73 @@
+{
+  "Template" : [ {
+    "name" : "template2",
+    "alias" : "template2_6bfcc3ab582442a889df",
+    "fields" : "[{\"name\":\"t0\",\"type\":\"INT\"},{\"name\":\"t1\",\"type\":\"LONG\"}]",
+    "description" : ""
+  }, {
+    "name" : "template1",
+    "alias" : "template1_ea5ef2be45724a57b1a5",
+    "fields" : "[{\"name\":\"t0\",\"type\":\"INT\"},{\"name\":\"t1\",\"type\":\"LONG\"}]",
+    "description" : ""
+  } ],
+  "Label" : [ {
+    "name" : "label1"
+  }, {
+    "name" : "label2"
+  } ],
+  "Folder" : [ {
+    "path" : "folder1/",
+    "alias" : "folder1_f59c16d609e744c5a546",
+    "templateAlias" : "",
+    "fields" : "[{\"name\":\"t0\",\"type\":\"INT\"},{\"name\":\"t1\",\"type\":\"LONG\"}]",
+    "description" : ""
+  }, {
+    "path" : "folder1/folder2/",
+    "alias" : "folder1_folder2_3f223a9803434b04af23",
+    "templateAlias" : "",
+    "fields" : "[{\"name\":\"t0\",\"type\":\"INT\"},{\"name\":\"t1\",\"type\":\"LONG\"}]",
+    "description" : ""
+  } ],
+  "File-timeseries" : [ {
+    "path" : "folder1/tag2",
+    "alias" : "tag2_xxx",
+    "templateAlias" : "",
+    "fields" : "[{\"name\":\"t0\",\"type\":\"INT\"},{\"name\":\"t1\",\"type\":\"LONG\"}]",
+    "description" : "",
+	"mockData" : "FALSE",
+    "autoDashboard" : "FALSE",
+    "persistence" : "FALSE",
+    "label" : ""
+  }, {
+    "path" : "folder1/tag1",
+    "alias" : "tag1_xxx",
+    "templateAlias" : "",
+    "fields" : "[{\"name\":\"t0\",\"type\":\"INT\"},{\"name\":\"t1\",\"type\":\"LONG\"}]",
+    "description" : "",
+	"mockData" : "FALSE",
+    "autoDashboard" : "FALSE",
+    "persistence" : "FALSE",
+    "label" : ""
+  } ],
+  "File-relation" : [ {
+    "path" : "folder1/rel1",
+    "alias" : "rel1_xxx",
+    "templateAlias" : "",
+    "fields" : "[{\"name\":\"t0\",\"type\":\"INT\"},{\"name\":\"t1\",\"type\":\"LONG\"}]",
+    "description" : "",
+	"mockData" : "FALSE",
+    "autoDashboard" : "FALSE",
+    "persistence" : "FALSE",
+    "label" : ""
+  }, {
+    "path" : "folder1/rel2",
+    "alias" : "rel2_xxx",
+    "templateAlias" : "",
+    "fields" : "[{\"name\":\"t0\",\"type\":\"INT\"},{\"name\":\"t1\",\"type\":\"LONG\"}]",
+    "description" : "",
+	"mockData" : "FALSE",
+    "autoDashboard" : "FALSE",
+    "persistence" : "FALSE",
+    "label" : ""
+  } ]
+}

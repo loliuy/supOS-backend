@@ -1,5 +1,6 @@
 package com.supos.uns.vo;
 
+import com.supos.common.utils.PathUtil;
 import com.supos.common.vo.FieldDefineVo;
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
@@ -17,6 +18,15 @@ public class CreateTemplateVo {
 
     int batch;
     int index;
+
+    String alias;
+
+    public String getAlias() {
+        if (alias == null && path != null) {
+            alias = PathUtil.generateAlias(path,1);
+        }
+        return alias;
+    }
 
     /**
      * 模板名称

@@ -775,7 +775,7 @@ public class UnsManagerService extends ServiceImpl<UnsMapper, UnsPo> {
 
     private SrcJdbcType relationType = SrcJdbcType.Postgresql, timeDataType;
 
-    Map<String, String> createModelAndInstancesInner(final CreateModelInstancesArgs args) {
+    public Map<String, String> createModelAndInstancesInner(final CreateModelInstancesArgs args) {
         log.info("createModelAndInstances args:{}", args);
         List<CreateTopicDto> topicDtos = args.topics;
         Map<String, String[]> labelsMap = args.labelsMap != null ? args.labelsMap : Collections.emptyMap();
@@ -2172,6 +2172,12 @@ public class UnsManagerService extends ServiceImpl<UnsMapper, UnsPo> {
         List<UnsPo> existTemplates = list(Wrappers.lambdaQuery(UnsPo.class).in(UnsPo::getPath, pathSet).eq(UnsPo::getPathType, 1));
         Map<String, UnsPo> existTemplateMap = existTemplates.stream().collect(Collectors.toMap(UnsPo::getPath, Function.identity(), (k1, k2) -> k2));
 
+        Set<String> aliasSet = createTemplateVos.stream().map(CreateTemplateVo::getAlias).collect(Collectors.toSet());
+        List<UnsPo> existAliasTemplates = list(
+                Wrappers.lambdaQuery(UnsPo.class).in(UnsPo::getAlias, aliasSet));
+        Map<String, UnsPo> existAliasTemplateMap = existAliasTemplates.stream()
+                .collect(Collectors.toMap(UnsPo::getAlias, Function.identity(), (k1, k2) -> k2));
+
         Map<String, String> errorMap = new HashMap<>();
         List<UnsPo> unsPos = new ArrayList<>(createTemplateVos.size());
         for (CreateTemplateVo createTemplateVo : createTemplateVos) {
@@ -2180,10 +2186,15 @@ public class UnsManagerService extends ServiceImpl<UnsMapper, UnsPo> {
                 errorMap.put(createTemplateVo.gainBatchIndex(), I18nUtils.getMessage("uns.template.name.already.exists"));
                 continue;
             }
+            if (existAliasTemplateMap.containsKey(createTemplateVo.getAlias())) {
+                errorMap.put(createTemplateVo.gainBatchIndex(), I18nUtils.getMessage("uns.template.alias.already.exists"));
+                continue;
+            }
             UnsPo unsPo = new UnsPo(path);
             unsPo.setId(genIdForPath(path));
             unsPo.setPathType(1);
             unsPo.setDataType(0);
+            unsPo.setAlias(createTemplateVo.getAlias());
             unsPo.setFields(JsonUtil.toJson(createTemplateVo.getFields()));
             unsPo.setDescription(createTemplateVo.getDescription());
             unsPo.setAlias(PathUtil.generateAlias(path, 1));

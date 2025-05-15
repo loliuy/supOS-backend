@@ -91,7 +91,9 @@ public class Constants {
     public static final String SYSTEM_ROOT = "/system/";
 
     public final static String EXCEL_TEMPLATE_PATH = "/templates/all-namespace.xlsx";
+    public final static String JSON_TEMPLATE_PATH = "/templates/all-namespace.json";
     public final static String EXCEL_OUT_PATH = "/export/all-namespace.xlsx";
+    public final static String JSON_OUT_PATH = "/export/all-namespace.json";
 
     public static final String ACCESS_TOKEN_KEY = "supos_community_token";
 

@@ -49,8 +49,8 @@ public class UnsExcelApiController {
      * @param response
      */
     @GetMapping("/template/download")
-    public void templateDownload(HttpServletResponse response) {
-        FileUtils.downloadByPath(Constants.EXCEL_TEMPLATE_PATH, response);
+    public void templateDownload(@RequestParam("fileType") String fileType, HttpServletResponse response) {
+        unsExcelService.downloadTemplate(fileType, response);
     }
 
     /**
