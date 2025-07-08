@@ -109,7 +109,7 @@
             "editorMode": "code",
             "format": "table",
             "rawQuery": true,
-            "rawSql": "SELECT {columns} FROM \"{schema}\".\"{tableName}\" ",
+            "rawSql": "SELECT {columns} FROM \"{schema}\".\"{tableName}\" where 1=1 {tagNameCondition} ",
             "refId": "A",
             "sql": {
               "columns": [

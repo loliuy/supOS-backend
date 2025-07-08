@@ -68,7 +68,7 @@ public class ImportNodeFlowController {
                     firstTopicNameMap.put(entry.getKey(), topic.getTopic());
                 }
                 BatchImportRequestVO.UnsVO uns = new BatchImportRequestVO.UnsVO();
-                uns.setUnsTopic(topic.getTopic());
+                uns.setUnsTopic(topic.getPath());
                 String mockJsonData = genMockData(topic.getFields());
                 uns.setProtocol(IOTProtocol.RELATION.getName());
                 uns.setJsonExample(mockJsonData);
@@ -132,7 +132,7 @@ public class ImportNodeFlowController {
             }
             FieldType t = field.getType();
             switch (t) {
-                case INT:
+                case INTEGER:
                 case LONG: {
                     sb.append("\n'").append(field.getName()).append("'").append(":generateRandomNumber(),");
                     break;

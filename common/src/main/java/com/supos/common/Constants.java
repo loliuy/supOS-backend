@@ -10,6 +10,7 @@ public class Constants {
 
     public static final boolean useAliasAsTopic; // 是否使用别名alias作为 mqtt topic,false 则使用文件路径作为 mqtt topic
     public static final String MQTT_PLUGIN;
+
     public static final String SYSTEM_FIELD_PREV = "_";
     public static final String SYSTEM_SEQ_TAG = "tag_name";
     public static final String SYSTEM_SEQ_VALUE = "value";
@@ -19,8 +20,12 @@ public class Constants {
     public static final int UNS_ADD_BATCH_SIZE;
     public static final String SYS_FIELD_ID = Constants.SYSTEM_FIELD_PREV + "id";
     public static final Set<String> systemFields;
+
     public static final String MERGE_FLAG = "#mg#";// 按时间戳合并消息的标志
     public static final String FIRST_MSG_FLAG = "#1#";//启动时首条消息的标志
+    public static final int WS_SESSION_LIMIT; // ws会话限制
+    public static final int UNS_OVERDUE_DELETE;
+
     static {
         final String k = "SYS_OS_USE_ALIAS_PATH_AS_TOPIC";
         String v = System.getenv(k);
@@ -32,7 +37,11 @@ public class Constants {
         SYS_FIELD_CREATE_TIME = SystemUtil.get("SYS_OS_TIMESTAMP_NAME", "timeStamp");
         QOS_FIELD = SystemUtil.get("SYS_OS_QUALITY_NAME", "status");
         UNS_ADD_BATCH_SIZE = Integer.parseInt(SystemUtil.get("UNS_ADD_BATCH_SIZE", "1000"));
+
         MQTT_PLUGIN =  SystemUtil.get("MQTT_PLUGIN", "emqx");
+        WS_SESSION_LIMIT =  SystemUtil.getInt("WS_SESSION_LIMIT", 50);
+        UNS_OVERDUE_DELETE =  SystemUtil.getInt("UNS_HISTORY_OVER_DUE", 7);
+
         systemFields = new HashSet<>(Arrays.asList(SYSTEM_SEQ_TAG, SYS_FIELD_ID, SYS_FIELD_CREATE_TIME, Constants.QOS_FIELD, Constants.SYS_SAVE_TIME, "_ct"));
 
     }
@@ -134,12 +143,19 @@ public class Constants {
     public static final String PLUGIN_PATH = ROOT_PATH + "/plugins";
     public static final String PLUGIN_TEMP_PATH = PLUGIN_PATH + "/temp";
     public static final String PLUGIN_INSTALLED_PATH = PLUGIN_PATH + "/installed";
+
+    public static final String PLUGIN_UPGRADE_PATH = PLUGIN_PATH + "/upgrade";
+    public static final String PLUGIN_UPGRADE_TEMP_PATH = PLUGIN_PATH + "/upgrade-temp";
     public static final String PLUGIN_FRONTEND_PATH = ROOT_PATH + "/plugins-frontend";
 
     public static final String LOG_PATH = "/logs";
 
     public static final String EXCEL_ROOT = "/excel/";
 
+    public static final String GLOBAL_IMPORT = "/global-import/";
+
+    public static final String GLOBAL_EXPORT = "/global-export/";
+    public static final String GLOBAL_IMPORT_ERROR = "/global-import-error/";
     public static final String EXAMPLE_ROOT = "/example/";
 
     public static final String UNS_ROOT = "/uns/";
@@ -223,4 +239,10 @@ public class Constants {
      * 通知方式配置文件
      */
     public static final String NOTIFY_CONFIG_FILE = "notify_config.yml";
+
+    public static final String GLOBAL_EXPORT_YAML = "export.yml";
+    public static final String GLOBAL_EXPORT_SOURCE_FLOW = "source_flow.json";
+    public static final String GLOBAL_EXPORT_EVENT_FLOW = "event_flow.json";
+    public static final String GLOBAL_EXPORT_DASHBOARD = "dashboard.json";
+
 }

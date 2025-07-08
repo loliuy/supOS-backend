@@ -1,4 +1,4 @@
-package com.supos.uns.vo;
+package com.supos.common.vo;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import lombok.Data;
