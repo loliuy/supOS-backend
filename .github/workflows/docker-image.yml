@@ -30,25 +30,37 @@ jobs:
         run: |
           echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
 
-      - name: Tag and push Docker image
+      - name: Build and push ARM64 Docker image
         run: |
           TIMESTAMP=$(date +'%Y%m%d%H%M%S')
           
-          docker tag suposce/supos-ce-backend:latest suposce/supos-ce-backend:${TIMESTAMP}
-          docker push suposce/supos-ce-backend:${TIMESTAMP}      
+          docker buildx create --use --name arm-builder || docker buildx use arm-builder
+          
+          docker buildx build \
+            --platform linux/arm64 \
+            --tag suposce/supos-ce-backend:${TIMESTAMP} \
+            --tag suposce/supos-ce-backend:1.0.9-T13-arm64 \
+            --push .
 
-          docker tag suposce/supos-ce-backend:latest suposce/supos-ce-backend:1.0.9-T13
-          docker push suposce/supos-ce-backend:1.0.9-T13
+      # - name: Tag and push Docker image
+      #   run: |
+      #     TIMESTAMP=$(date +'%Y%m%d%H%M%S')
+          
+      #     docker tag suposce/supos-ce-backend:latest suposce/supos-ce-backend:${TIMESTAMP}
+      #     docker push suposce/supos-ce-backend:${TIMESTAMP}      
 
-          docker rmi suposce/supos-ce-backend:${TIMESTAMP}
-          docker rmi suposce/supos-ce-backend:1.0.9-T13     
+      #     docker tag suposce/supos-ce-backend:latest suposce/supos-ce-backend:1.0.9-T13
+      #     docker push suposce/supos-ce-backend:1.0.9-T13
+            
+      #     docker rmi suposce/supos-ce-backend:${TIMESTAMP}
+      #     docker rmi suposce/supos-ce-backend:1.0.9-T13     
 
-      - name: Clean up
-        run: |
-          docker builder prune --all --force
-          docker volume prune -f
-          docker network prune -f
-          docker system df          
-          docker rmi $(docker images --filter "dangling=true" -q) || true
+      # - name: Clean up
+      #   run: |
+      #     docker builder prune --all --force
+      #     docker volume prune -f
+      #     docker network prune -f
+      #     docker system df          
+      #     docker rmi $(docker images --filter "dangling=true" -q) || true
 
       - run: echo "🍏 This job's status is ${{ job.status }}."
