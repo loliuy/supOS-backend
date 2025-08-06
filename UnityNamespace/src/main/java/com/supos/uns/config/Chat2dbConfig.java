@@ -6,6 +6,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.mybatis.spring.SqlSessionTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.event.ContextRefreshedEvent;
 import org.springframework.context.event.EventListener;
@@ -19,6 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 @Slf4j
 @Configuration
+@ConditionalOnProperty(value = "chat2db.enable", matchIfMissing = true)
 public class Chat2dbConfig {
     @Value("${chat2db.address:}")
     String chat2dbHost;
@@ -68,7 +70,7 @@ public class Chat2dbConfig {
                 "}";
         if (StringUtils.isBlank(chat2dbHost)) {
             if (System.getProperty("os.name").toLowerCase().contains("windows")) {
-                chat2dbHost = "http://100.100.100.22:33895";
+                return;
             } else {
                 chat2dbHost = "http://chat2db:10824";
             }

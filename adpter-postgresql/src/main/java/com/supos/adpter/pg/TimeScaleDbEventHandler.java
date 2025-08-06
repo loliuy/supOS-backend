@@ -12,12 +12,12 @@ import com.supos.common.dto.*;
 import com.supos.common.event.*;
 import com.supos.common.service.IUnsDefinitionService;
 import com.supos.common.utils.DbTableNameUtils;
-import com.supos.common.utils.I18nUtils;
 import com.supos.common.utils.JsonUtil;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.lang3.ArrayUtils;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.annotation.Order;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.ColumnMapRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.util.CollectionUtils;
@@ -63,7 +63,7 @@ public class TimeScaleDbEventHandler extends PostgresqlBase implements TimeSeque
                 String tbf = def.getTbFieldName();
                 String extFilter = "";
                 if (tbf != null) {
-                    extFilter = " \"" + tbf + "\" = '" + alias + "' and ";
+                    extFilter = " \"" + tbf + "\" = " + def.getId() + " and ";
                     s.append(extFilter);
                 }
                 s.append(CT).append(select).append(CT).append(") FROM ").append(dbTable)
@@ -162,7 +162,7 @@ public class TimeScaleDbEventHandler extends PostgresqlBase implements TimeSeque
         String tbf = def.getTbFieldName();
         String tableName = alias, extFilter = null;
         if (tbf != null) {
-            extFilter = " \"" + tbf + "\" = '" + alias + "' ";
+            extFilter = " \"" + tbf + "\" = " + def.getId() + " ";
             tableName = def.getTable();
         }
         sql.append(" FROM ").append('"').append(tableName).append('"').append(' ');
@@ -201,7 +201,7 @@ public class TimeScaleDbEventHandler extends PostgresqlBase implements TimeSeque
         if (!CollectionUtils.isEmpty(event.getStandard())) {
             for (SimpleUnsInstance simpleUns : event.getStandard()) {
                 StringBuilder sql = new StringBuilder("delete from ");
-                sql.append(simpleUns.getTableName()).append(" where tag_name='").append(simpleUns.getAlias()).append("'");
+                sql.append(simpleUns.getTableName()).append(" where ").append(Constants.SYSTEM_SEQ_TAG).append("=").append(simpleUns.getId());
                 sqls.add(sql.toString());
             }
         }
@@ -226,17 +226,20 @@ public class TimeScaleDbEventHandler extends PostgresqlBase implements TimeSeque
             try {
                 for (SaveDataDto dto : event.topicData) {
                     String table = DbTableNameUtils.getFullTableName(dto.getTable());
-                    List<Map<String, Object>>[] listList = Lists.partition(dto.getList(), Constants.SQL_BATCH_SIZE).toArray(new List[0]);
+
+                    List<Map<String, Object>>[] listList = Lists.partition(dto.getList(), 1000).toArray(new List[0]);
                     for (List<Map<String, Object>> list : listList) {
-                        List<String> saveOrUpdateSQLs = getSaveOrUpdateSQLs(list, table, dto);
+                        List<String> saveOrUpdateSQLs = List.of(getInsertSQL(list, table, dto, event.duplicateIgnore));
                         for (String saveOrUpdateSQL : saveOrUpdateSQLs) {
                             SQLs.add(Pair.of(dto, saveOrUpdateSQL));
                         }
                     }
                 }
+
             } catch (Throwable ex) {
                 log.error("tsdb onSaveData SQLErr", ex);
             }
+
             List<List<Pair<SaveDataDto, String>>> segments = Lists.partition(SQLs, Constants.SQL_BATCH_SIZE);
             for (List<Pair<SaveDataDto, String>> sqlPairList : segments) {
                 List<String> sqlList = sqlPairList.stream().map(Pair::getValue).collect(Collectors.toList());
@@ -244,37 +247,58 @@ public class TimeScaleDbEventHandler extends PostgresqlBase implements TimeSeque
                 String[] sqlArray = sqlList.toArray(new String[0]);
                 try {
                     jdbcTemplate.batchUpdate(sqlArray);
+                } catch (DuplicateKeyException e1) {
+                    // 使用 on conflict update重试
+                    log.debug("PgTimeScale 写入失败, 主键冲突", e1);
+                    log.error("PgTimeScale 写入失败, 主键冲突， 使用on conflict update重试");
+                    try {
+                        List<String> retrySqlList = buildRetrySqlArray(sqlPairList);
+                        jdbcTemplate.batchUpdate(retrySqlList.toArray(new String[0]));
+                        log.debug("retry success!");
+                    } catch (Exception rex) {
+                        log.error("PgTimeScale写入 重试失败:", rex);
+                    }
+
                 } catch (Exception ex) {
-                    Set<Long> unsIds = sqlPairList.stream().map(s -> s.getKey().getId()).collect(Collectors.toSet());
-                    TopologyLog.log(unsIds, TopologyLog.Node.DATA_PERSISTENCE, TopologyLog.EventCode.ERROR, I18nUtils.getMessage("uns.topology.db.pg"));
                     log.error("PgTimeScale 写入失败", ex);
-                    Throwable cause = ex, tmp;
-                    while ((tmp = cause.getCause()) != null) {
-                        cause = tmp;
-                    }
-                    String msg = cause.getMessage();
-                    if (msg != null && msg.contains("does not exist")) {
-                        CreateTopicDto[] dtos = sqlPairList.stream().map(s -> s.getKey().getCreateTopicDto())
-                                .toArray(CreateTopicDto[]::new);
-                        try {
-                            Map<String, TableInfo> tableInfoMap = listTableInfos(dtos);
-                            batchCreateTables(dtos, tableInfoMap);
-                            jdbcTemplate.batchUpdate(sqlArray);
-                            log.debug("retry success!");
-                        } catch (Exception rex) {
-                            log.error("PgTimeScale 写入 re失败:" + unsIds, rex);
-                        }
-                    }
                 }
             }
         }
     }
 
-    static List<String> getSaveOrUpdateSQLs(List<Map<String, Object>> list, String table, SaveDataDto saveDataDto) {
+    private List<String> buildRetrySqlArray(List<Pair<SaveDataDto, String>> sqlPairList) {
+        List<String> sqlList = new ArrayList<>();
+        for (Pair<SaveDataDto, String> pair : sqlPairList) {
+            String table = DbTableNameUtils.getFullTableName(pair.getKey().getCreateTopicDto().getTableName());
+            String[] pks = pair.getKey().getCreateTopicDto().getPrimaryField();
+            StringBuilder builder = new StringBuilder(pair.getValue());
+            FieldDefine[] columns = pair.getKey().getCreateTopicDto().getFields();
+            if (pks != null && pks.length > 0) {
+                builder.append("ON CONFLICT(");
+                for (String f : pks) {
+                    builder.append('"').append(f).append("\",");
+                }
+                builder.setCharAt(builder.length() - 1, ')');
+                builder.append(" do update set ");
+                for (FieldDefine define : columns) {
+                    if (!define.isUnique()) {
+                        String f = define.getName();
+                        builder.append('"').append(f).append("\"=COALESCE(EXCLUDED.\"").append(f).append("\",")
+                                .append(table).append('.').append('"').append(f).append("\"),");
+                    }
+                }
+                builder.setCharAt(builder.length() - 1, ' ');
+            }
+            sqlList.add(builder.toString());
+        }
+        return sqlList;
+    }
+
+    /*static List<String> getSaveOrUpdateSQLs(List<Map<String, Object>> list, String table, SaveDataDto saveDataDto) {
 
         Set<String> pks = saveDataDto.getFieldDefines().getUniqueKeys();
         if (pks == null || pks.isEmpty()) {
-            return List.of(getInsertSQL(list, table, saveDataDto, true));
+            return List.of(getInsertSQL(list, table, saveDataDto, "true"));
         }
         Map<String, Object>[] array = list.toArray(new Map[0]);
         final boolean onUpdate = array[0].containsKey(Constants.FIRST_MSG_FLAG);
@@ -330,7 +354,7 @@ public class TimeScaleDbEventHandler extends PostgresqlBase implements TimeSeque
             sqls.add(0, getInsertSQL(saveOrUpdates, table, saveDataDto, false));
         }
         return sqls;
-    }
+    }*/
 
     @EventListener(classes = UpdateInstanceEvent.class)
     @Order(9)
@@ -404,7 +428,7 @@ public class TimeScaleDbEventHandler extends PostgresqlBase implements TimeSeque
                 sts.append(" where ");
                 String tbValue = topic.getTbFieldName();
                 if (tbValue != null) {
-                    sts.append('"').append(tbValue).append("\" = '").append(topic.getAlias()).append("' AND ");
+                    sts.append('"').append(tbValue).append("\" = ").append(topic.getId()).append(" AND ");
                 }
                 for (int i = 0; i < event.getEqConditions().size(); i++) {
                     sts.append(event.getEqConditions().get(i).getFieldName()).append(" = ").append(event.getEqConditions().get(i).getValue()).append("");
@@ -431,7 +455,7 @@ public class TimeScaleDbEventHandler extends PostgresqlBase implements TimeSeque
             sql.append("select *").append(" from ").append(currentSchema).append(".\"").append(tableName).append("\"");
             String tbValue = topic.getTbFieldName();
             if (tbValue != null) {
-                sql.append(" where \"").append(tbValue).append("\" = '").append(topic.getAlias()).append("' ");
+                sql.append(" where \"").append(tbValue).append("\" = ").append(topic.getId()).append(" ");
             }
             sql.append(" ORDER BY \"")
                     .append(ct)

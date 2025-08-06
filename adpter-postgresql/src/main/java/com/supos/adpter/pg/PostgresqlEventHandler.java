@@ -300,10 +300,9 @@ public class PostgresqlEventHandler extends PostgresqlBase implements DataStorag
                 if (procSerial && def.isUnique()) {
                     type = "serial";
                 }
-            case FLOAT:
+                break;
             case LONG:
-            case DOUBLE:
-                if (procSerial && def.isUnique()) {
+                if (procSerial && def.isUnique() && def.getTbValueName() == null) {
                     type = "bigserial";
                 }
                 break;
@@ -331,7 +330,7 @@ public class PostgresqlEventHandler extends PostgresqlBase implements DataStorag
     }
 
 
-    static String getInsertSQL(Collection<Map<String, Object>> list, String table, SaveDataDto saveDataDto, boolean ignore) {
+    static String getInsertSQL(Collection<Map<String, Object>> list, String table, SaveDataDto saveDataDto, Boolean ignore) {
         /**
          * INSERT INTO test (id, name, email)
          * VALUES (1, 'Alice', 'alice@example.com')
@@ -340,6 +339,7 @@ public class PostgresqlEventHandler extends PostgresqlBase implements DataStorag
          *     email = EXCLUDED.email;
          */
         StringBuilder builder = new StringBuilder(255);
+        table = DbTableNameUtils.getFullTableName(table);
         builder.append("INSERT INTO ").append(table).append(" (");
 
         FieldDefine[] columns = saveDataDto.getCreateTopicDto().getFields();
@@ -395,24 +395,26 @@ public class PostgresqlEventHandler extends PostgresqlBase implements DataStorag
             builder.append(',');
         }
         builder.setCharAt(builder.length() - 1, ' ');
-
-        if (pks != null && pks.length > 0) {
-            builder.append("ON CONFLICT(");
-            for (String f : pks) {
-                builder.append('"').append(f).append("\",");
-            }
-            builder.setCharAt(builder.length() - 1, ')');
-            if (ignore) {
-                builder.append(" do nothing");
-            } else {
-                builder.append(" do update set ");
-                for (FieldDefine define : columns) {
-                    if (!define.isUnique()) {
-                        String f = define.getName();
-                        builder.append('"').append(f).append("\"=EXCLUDED.\"").append(f).append("\",");
-                    }
+        if (ignore != null) {
+            if (pks != null && pks.length > 0) {
+                builder.append("ON CONFLICT(");
+                for (String f : pks) {
+                    builder.append('"').append(f).append("\",");
                 }
-                builder.setCharAt(builder.length() - 1, ' ');
+                builder.setCharAt(builder.length() - 1, ')');
+                if (ignore) {
+                    builder.append(" do nothing");
+                } else {
+                    builder.append(" do update set ");
+                    for (FieldDefine define : columns) {
+                        if (!define.isUnique()) {
+                            String f = define.getName();
+                            builder.append('"').append(f).append("\"=COALESCE(EXCLUDED.\"").append(f).append("\",")
+                                    .append(table).append('.').append('"').append(f).append("\"),");
+                        }
+                    }
+                    builder.setCharAt(builder.length() - 1, ' ');
+                }
             }
         }
         String insertSQL = builder.toString();
@@ -448,6 +450,8 @@ public class PostgresqlEventHandler extends PostgresqlBase implements DataStorag
             if (def.isUnique()) {
                 builder.append(" NOT NULL ");
             } else if (type.startsWith("timestamp") && name.equals(Constants.SYS_SAVE_TIME)) {
+                builder.append(" DEFAULT now() ");
+            } else if (type.startsWith("timestamp") && name.equals(Constants.SYS_FIELD_CREATE_TIME)) {
                 builder.append(" DEFAULT now() ");
             }
             builder.append(',');

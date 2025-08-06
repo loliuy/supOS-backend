@@ -1,4 +1,4 @@
-package com.supos.adapter.mqtt.dto;
+package com.supos.common.dto.mqtt;
 
 import cn.hutool.core.collection.ConcurrentHashSet;
 import cn.hutool.core.util.ArrayUtil;
@@ -12,14 +12,13 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 
 @Slf4j
 @Getter @Setter
 public class TopicDefinition {
     FieldDefines fieldDefines;
-    ConcurrentHashMap<String, Object> lastMsg;
-    ConcurrentHashMap<String, Long> lastDt;
+    Map<String, Object> lastMsg;
+    Map<String, Long> lastDt;
     Long lastDateTime;
     Set<Long> referCalcUns; // 被引用的计算实例
     CreateTopicDto createTopicDto;
@@ -55,7 +54,8 @@ public class TopicDefinition {
     }
 
     public int getDataType() {
-        return createTopicDto.getDataType();
+        Integer dataType = createTopicDto.getDataType();
+        return dataType != null ? dataType : 0;
     }
 
     public AlarmRuleDefine getAlarmRuleDefine() {
@@ -75,6 +75,9 @@ public class TopicDefinition {
     }
 
     private void initByCreateTopicDto(CreateTopicDto dto, boolean init) {
+        if (dto == null) {
+            return;
+        }
         FieldDefine[] fields = dto.getFields();
         if (fields != null && fields.length > 0) {
             Map<String, FieldDefine> fieldDefineMap = dto.getFieldDefines().getFieldsMap();
