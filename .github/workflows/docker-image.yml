@@ -39,7 +39,7 @@ jobs:
           docker buildx build \
             --platform linux/amd64,linux/arm64 \
             --tag suposce/supos-ce-backend:${TIMESTAMP} \
-            --tag suposce/supos-ce-backend:1.0.10-T1 \
+            --tag suposce/supos-ce-backend:1.0.11-T1 \
             --push .
 
       # - name: Tag and push Docker image
