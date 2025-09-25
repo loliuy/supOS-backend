@@ -124,7 +124,7 @@ public class TodoService extends ServiceImpl<TodoMapper, TodoPo> {
         String msg;
         if (isAlarm) {
             //【实例】,【属性】,【时间】 ,【条件】,【阀值】,【当前值】
-            msg = I18nUtils.getMessage("todo.template.alarm",
+            msg = I18nUtils.getMessageWithSysLang("todo.template.alarm",
                     uns.getPath(),
                     instanceField.getField(),
                     date,
@@ -132,7 +132,7 @@ public class TodoService extends ServiceImpl<TodoMapper, TodoPo> {
                     data.get("limit_value"),
                     data.get("current_value"));
         } else {
-            msg = I18nUtils.getMessage("todo.template.alarm.cancel",
+            msg = I18nUtils.getMessageWithSysLang("todo.template.alarm.cancel",
                     uns.getPath(),
                     instanceField.getField(),
                     date,
@@ -145,7 +145,7 @@ public class TodoService extends ServiceImpl<TodoMapper, TodoPo> {
             todo.setUserId(user.getId());
             todo.setUsername(user.getPreferredUsername());
             todo.setModuleCode(SysModuleEnum.ALARM.getCode());
-            todo.setModuleName(I18nUtils.getMessage(SysModuleEnum.ALARM.getCode()));
+            todo.setModuleName(I18nUtils.getMessageWithSysLang(SysModuleEnum.ALARM.getCode()));
             todo.setStatus(0);
             todo.setTodoMsg(msg);
             todo.setBusinessId(instanceId);//实例ID
@@ -221,16 +221,16 @@ public class TodoService extends ServiceImpl<TodoMapper, TodoPo> {
     public ResultVO handler(HandleTodoDto handleTodoDto) {
         TodoPo todoPo = todoMapper.selectById(handleTodoDto.getId());
         if (todoPo == null) {
-            return ResultVO.fail("对应的待办不存在");
+            return ResultVO.fail(I18nUtils.getMessage("todo.null"));
         }
 
         if (todoPo.getStatus() == 1){
-            return ResultVO.fail("此待办已处理完成，不允许再次被处理");
+            return ResultVO.fail(I18nUtils.getMessage("todo.done"));
         }
 
         UserManageVo user = userManageMapper.getByUsername(handleTodoDto.getUsername());
         if (user == null) {
-            return ResultVO.fail("用户信息不存在");
+            return ResultVO.fail(I18nUtils.getMessage("user.not.exist"));
         }
         todoPo.setStatus(1);
         todoPo.setHandlerUsername(user.getPreferredUsername());
@@ -266,7 +266,7 @@ public class TodoService extends ServiceImpl<TodoMapper, TodoPo> {
         String username = createTodoVo.getUsername();
         UserManageVo user = userManageMapper.getByUsername(username);
         if (user == null) {
-            return ResultVO.fail("用户信息不存在");
+            return ResultVO.fail(I18nUtils.getMessage("user.not.exist"));
         }
         TodoPo todoPo = new TodoPo();
         todoPo.setUsername(user.getPreferredUsername());
