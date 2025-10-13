@@ -1,66 +1,90 @@
-name: GitHub Actions Demo
-run-name: ${{ github.actor }} is testing out GitHub Actions 🚀
-on: [push]
+name: CI Build & Push (no-Dockerfile-change)
+
+on:
+  push:
+    branches: [ "main" ]        # 按需修改
+  workflow_dispatch:
 
 jobs:
-  Explore-GitHub-Actions:
+  build-and-push:
     runs-on: ubuntu-latest
-    steps:
-      - run: echo "🎉 The job was automatically triggered by a ${{ github.event_name }} event."
-      - run: echo "🐧 This job is now running on a ${{ runner.os }} server hosted by GitHub!"
-      - run: echo "🔎 The name of your branch is ${{ github.ref }} and your repository is ${{ github.repository }}."
 
-      - name: Check out repository code
+    steps:
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - run: echo "💡 The ${{ github.repository }} repository has been cloned to the runner."
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'     # 或 21，与项目一致
 
-      - name: List files in the repository
+      - name: Cache Maven
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: maven-${{ runner.os }}-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-${{ runner.os }}-
+
+      - name: Maven build (generate lombok code here)
+        run: mvn -B -U clean package -DskipTests
+
+      # 查找要打包的 JAR（假设在 bootstrap 模块）
+      - name: Locate JAR
+        id: jar
         run: |
-          ls ${{ github.workspace }}                              
+          JAR_PATH=$(ls -1 bootstrap/target/bootstrap*.jar | head -n1)
+          if [ -z "$JAR_PATH" ]; then
+            echo "No JAR found under bootstrap/target/" >&2
+            exit 1
+          fi
+          echo "jar_path=$JAR_PATH" >> $GITHUB_OUTPUT
 
-      - name: Build Docker image
+      # 生成一个“临时的运行层 Dockerfile”，不改你仓库的 Dockerfile
+      - name: Generate runtime Dockerfile
         run: |
-          docker build -t suposce/supos-ce-backend:latest .      
+          cat > Dockerfile.runtime <<'EOF'
+          FROM eclipse-temurin:17-jdk
+          WORKDIR /app
+          ARG APP_JAR=app.jar
+          COPY app.jar /app/app.jar
 
-      - name: Log in to Docker Hub
-        env:
-          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-          DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-        run: |
-          echo "${DOCKER_PASSWORD}" | docker login -u "${DOCKER_USERNAME}" --password-stdin
+          RUN ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+              echo 'Asia/Shanghai' >/etc/timezone && \
+              mkdir -p /data/apps /data/resource/i18n
 
-      - name: Build and push multi-platform Docker image (amd64 + arm64)
-        run: |
-          TIMESTAMP=$(date +'%Y%m%d%H%M%S')
+          # 解包 i18n（需要 jar 命令，故用 JDK 基础镜像）
+          RUN cd /tmp/ && jar -xf /app/app.jar && \
+              cp /tmp/BOOT-INF/classes/i18n/*.properties /data/resource/i18n || true
 
-          docker buildx create --use --name multiarch-builder || docker buildx use multiarch-builder
+          EXPOSE 8080 19099 8000
+          ENTRYPOINT ["sh","-c","java $MEM_OPTS $JAVA_OPTS -Djava.security.egd=file:/dev/./urandom -Dlogging.file.name=./logs/supos.log -jar /app/app.jar"]
+          EOF
 
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --tag suposce/supos-ce-backend:${TIMESTAMP} \
-            --tag suposce/supos-ce-backend:1.0.11-T3 \
-            --push .
+          # 将编好的 JAR 放到构建上下文根目录，名为 app.jar
+          cp "${{ steps.jar.outputs.jar_path }}" app.jar
 
-      # - name: Tag and push Docker image
-      #   run: |
-      #     TIMESTAMP=$(date +'%Y%m%d%H%M%S')
-          
-      #     docker tag suposce/supos-ce-backend:latest suposce/supos-ce-backend:${TIMESTAMP}
-      #     docker push suposce/supos-ce-backend:${TIMESTAMP}      
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@v3
 
-      #     docker tag suposce/supos-ce-backend:latest suposce/supos-ce-backend:1.0.9-T13
-      #     docker push suposce/supos-ce-backend:1.0.9-T13
-            
-      #     docker rmi suposce/supos-ce-backend:${TIMESTAMP}
-      #     docker rmi suposce/supos-ce-backend:1.0.9-T13     
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v3
 
-      # - name: Clean up
-      #   run: |
-      #     docker builder prune --all --force
-      #     docker volume prune -f
-      #     docker network prune -f
-      #     docker system df          
-      #     docker rmi $(docker images --filter "dangling=true" -q) || true
+      - name: Docker login
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - run: echo "🍏 This job's status is ${{ job.status }}."
+      - name: Build & Push (multi-arch) with temp Dockerfile
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile.runtime     # 用临时 Dockerfile，不动你仓库里的那个
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            suposce/supos-ce-backend:latest
+            suposce/supos-ce-backend:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
