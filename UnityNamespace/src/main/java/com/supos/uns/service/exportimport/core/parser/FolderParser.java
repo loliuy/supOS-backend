@@ -179,7 +179,8 @@ public class FolderParser extends AbstractParser {
         folderDto.setFlagNo(flagNo);
 //        folderDto.setPath(getValueFromJsonNode(data, "namespace"));
         folderDto.setName(getValueFromJsonNode(data, "name"));
-        folderDto.setAlias(getValueFromJsonNode(data, "alias"));
+        String alias = getValueFromJsonNode(data, "alias");
+        folderDto.setAlias(StringUtils.isNotBlank(alias) ? alias : PathUtil.generateAlias(folderDto.getName(),0));
         folderDto.setDisplayName(getValueFromJsonNode(data, "displayName"));
         folderDto.setTemplateAlias(getValueFromJsonNode(data, "templateAlias"));
         folderDto.setDescription(getValueFromJsonNode(data, "description"));

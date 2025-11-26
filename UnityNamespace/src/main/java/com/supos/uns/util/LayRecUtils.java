@@ -195,11 +195,22 @@ public class LayRecUtils {
         return newPath;
     }
 
+    private static void updateChildrenPath(UnsPo parent, Map<Long, UnsPo> allNodes) {
+        for (UnsPo child : allNodes.values()) {
+            if (Objects.equals(child.getParentId(), parent.getId())) {
+                // 基于父节点路径重新生成
+                child.setPath(parent.getPath() + "/" + child.getName());
+                child.setPathName(child.getName());
+                updateChildrenPath(child, allNodes);
+            }
+        }
+    }
+
     private static void renameDuplicatePath(Map<Long, UnsPo> allNodes) {
-        // 上面方法存在一个问题，复现步骤：新建文件A->复制A并原地粘贴（变成A-1）->对A-1原地复制粘贴会出现路径重复的文件
-        // 根据路径进行分组，重复的重命名
-        Map<String, List<UnsPo>> groupByPath = allNodes.values().stream().filter(p -> p.getPath() != null).collect(Collectors.groupingBy(UnsPo::getPath));
-        // 找出重复的路径
+        Map<String, List<UnsPo>> groupByPath = allNodes.values().stream()
+                .filter(p -> p.getPath() != null)
+                .collect(Collectors.groupingBy(UnsPo::getPath));
+
         Map<String, List<UnsPo>> duplicatePaths = groupByPath.entrySet().stream()
                 .filter(entry -> entry.getValue().size() > 1)
                 .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
@@ -208,13 +219,16 @@ public class LayRecUtils {
         for (Map.Entry<String, List<UnsPo>> entry : duplicatePaths.entrySet()) {
             List<UnsPo> group = entry.getValue();
             group.sort(Comparator.comparingLong(UnsPo::getId));
+
             for (int i = 1; i < group.size(); i++) {
                 String newPath = genNewPath(entry.getKey(), pathSet);
-                group.get(i).setPath(newPath);
+                UnsPo dupNode = group.get(i);
+                dupNode.setPath(newPath);
                 String[] parts = newPath.split("/");
-                // 取路径最后一个元素
-                String lastElement = parts[parts.length - 1];
-                group.get(i).setPathName(lastElement);
+                dupNode.setPathName(parts[parts.length - 1]);
+
+                // ★★★ 新增：递归刷新所有子节点路径
+                updateChildrenPath(dupNode, allNodes);
             }
         }
     }

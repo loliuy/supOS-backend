@@ -172,6 +172,7 @@ public class FileParser extends AbstractParser {
             createTopicDto.setExpression(expression);
         }
 
+
         // 收集模板
         if (StringUtils.isNotBlank(fileDto.getTemplateAlias())) {
             wrapDto.setTemplateAlias(fileDto.getTemplateAlias());
@@ -240,6 +241,10 @@ public class FileParser extends AbstractParser {
             }
         }
 
+        Boolean mockData = parseBoolean(fileDto.getMockData(), false);
+        if (Boolean.TRUE.equals(mockData)) {
+            createTopicDto.setAddFlow(mockData);
+        }
         return wrapDto;
     }
 
@@ -288,7 +293,8 @@ public class FileParser extends AbstractParser {
         fileDto.setFlagNo(flagNo);
 //        fileDto.setPath(getValueFromJsonNode(data, "namespace"));
         fileDto.setName(getValueFromJsonNode(data, "name"));
-        fileDto.setAlias(getValueFromJsonNode(data, "alias"));
+        String alias = getValueFromJsonNode(data, "alias");
+        fileDto.setAlias(StringUtils.isNotBlank(alias) ? alias : PathUtil.generateAlias(fileDto.getName(),0));
         fileDto.setDisplayName(getValueFromJsonNode(data, "displayName"));
         fileDto.setTemplateAlias(getValueFromJsonNode(data, "templateAlias"));
         fileDto.setDescription(getValueFromJsonNode(data, "description"));
