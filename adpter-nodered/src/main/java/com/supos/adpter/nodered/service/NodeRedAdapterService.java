@@ -23,6 +23,7 @@ import com.supos.adpter.nodered.vo.UpdateFlowRequestVO;
 import com.supos.common.dto.NodeRedTagsDTO;
 import com.supos.common.dto.PageResultDTO;
 import com.supos.common.dto.grafana.DashboardRefDto;
+import com.supos.common.exception.BuzException;
 import com.supos.common.exception.NodeRedException;
 import com.supos.common.exception.vo.ResultVO;
 import com.supos.common.utils.I18nUtils;
@@ -215,6 +216,41 @@ public abstract class NodeRedAdapterService {
             vo.setMark(mark == null ? 0 : mark);
         }
         return vo;
+    }
+
+    /**
+     * 判断节点是否已经安装
+     * @param nodes 外部传入的节点
+     */
+    public void checkInvalidNodes(JSONArray nodes) {
+        List<String> nodeTypeList = queryInstalledNodeType();
+        for (int i = 0; i < nodes.size(); i++) {
+            String type = nodes.getJSONObject(i).getString("type");
+            if (!nodeTypeList.contains(type)) {
+                throw new BuzException("nodered.node.not.installed", type);
+            }
+        }
+    }
+
+    public List<String> queryInstalledNodeType() {
+        HttpRequest getClient = HttpUtil.createGet(String.format("http://%s:%s/nodes", nodeRedHost, nodeRedPort));
+        getClient.header("Accept", "application/json");
+        HttpResponse response = getClient.execute();
+        if (!isSuccess(response.getStatus())) {
+            log.error("node-red获取安装的节点失败：error = {}", response.body());
+            return null;
+        }
+        List<String> nodeTypeList = new ArrayList<>();
+        JSONArray nodeArray = JSON.parseArray(response.body());
+        for (int i = 0; i < nodeArray.size(); i++) {
+            JSONArray types = nodeArray.getJSONObject(i).getJSONArray("types");
+            if (types != null) {
+                for (int j = 0; j < types.size(); j++) {
+                    nodeTypeList.add(types.getString(j));
+                }
+            }
+        }
+        return nodeTypeList;
     }
 
     /**
