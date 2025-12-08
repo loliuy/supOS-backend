@@ -86,6 +86,6 @@ jobs:
           tags: |
             suposce/supos-ce-backend:latest
             suposce/supos-ce-backend:${{ github.sha }}
-            suposce/supos-ce-backend:1.0.13-T1
+            suposce/supos-ce-backend:1.0.13-T2
           cache-from: type=gha
           cache-to: type=gha,mode=max
