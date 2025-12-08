@@ -110,6 +110,7 @@ public class SourceflowController {
     @PostMapping("/inter-api/supos/flow/deploy")
     public ResultDTO deploy(@Valid @RequestBody DeployFlowRequestVO requestBody) {
         long id = Long.parseLong(requestBody.getId());
+        nodeRedAdapterService.checkInvalidNodes(requestBody.getFlows());
         DeployResponseVO deployResponse = nodeRedAdapterService.proxyDeploy(id, requestBody.getFlows(), null);
         return ResultDTO.successWithData(deployResponse);
     }

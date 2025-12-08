@@ -535,6 +535,9 @@ public class UnsAddService extends ServiceImpl<UnsMapper, UnsPo> implements IUns
                 newFolderOrFile = null;
             }
         }
+        if (unsPos.isEmpty()) {
+            throw new BuzException(400, "uns.paste.empty.not.allow");
+        }
         List<CreateTopicDto> createTopicDtos = unsPo2Dto(unsPos, sourceId, targetParentId, newFolderOrFile);
         if (createTopicDtos.size() == 1) {
             JsonResult<Map<String, String>> modelInstance = createCategoryModelInstance(createTopicDtos.get(0));

@@ -175,6 +175,24 @@ public class SystemConfigService {
             }
 
         }
+        if (activeServices.contains("emqx") && containerMap.get("emqx") == null) {
+            ContainerInfo containerInfo = new ContainerInfo();
+            containerInfo.setName("emqx");
+            containerInfo.setVersion("5.8");
+            String env = """
+                    {
+                      "service_account": "admin",
+                      "service_description": "aboutus.emqxDescription",
+                      "service_password": "public",
+                      "service_is_show": true,
+                      "service_logo": "emqx-original.svg",
+                      "service_redirect_url": "/emqx/home/"
+                    }
+                    """;
+            containerInfo.setEnvMap(JSONObject.parseObject(env));
+            containerInfo.setDescription("aboutus.emqxDescription");
+            containerMap.put("emqx", containerInfo);
+        }
         return containerMap;
     }
 
